@@ -3,6 +3,8 @@
 
 # NEML — Networked Evolutionary Machine Laboratory
 
+<p align="center"><img src="docs/assets/social-preview.png" alt="NEML" width="640"></p>
+
 [![Lisans: AGPL-3.0-or-later](https://img.shields.io/badge/lisans-AGPL--3.0--or--later-blue)](LICENSE)
 
 **Açık kaynak.** Ticari amaçla kullanabilirsiniz; kullanırken NEML'e atıf yapmak
