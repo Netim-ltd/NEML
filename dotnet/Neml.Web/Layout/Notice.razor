@@ -1,0 +1,12 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@* A message with an icon and text (never colour alone); errors are announced, the rest are polite. *@
+<div class="notice @Kind" role="@(Kind == "bad" ? "alert" : "status")">
+    <Icon Name="@(Kind switch { "ok" => "check", "warn" => "alert", "bad" => "alert", _ => "info" })" />
+    <div>@ChildContent</div>
+</div>
+
+@code {
+    [Parameter] public string Kind { get; set; } = "info";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

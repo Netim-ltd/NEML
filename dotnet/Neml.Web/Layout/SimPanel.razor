@@ -1,0 +1,194 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@implements IDisposable
+@inject ApiClient Api
+@inject TokenStore Tokens
+@using System.Text.Json
+
+<section class="card">
+    <h2>Simülasyon (Gazebo)</h2>
+    <p class="muted">
+        Simülasyon lab sunucusundaki Gazebo'da çalışır. Aşağıdan bir dünya seçip kayıtlı koşu başlatırsın; koşu sürerken kameradan gelen
+        son kare burada canlı güncellenir, bitince GIF kaydı galeriye eklenir. Dünyalar: düz zemin, labirent, alçak engeller, 10° rampa, engebeli arazi.
+    </p>
+    <form @onsubmit="StartRunAsync" @onsubmit:preventDefault>
+        <label>Dünya
+            <select @bind="world">
+                @foreach (var w in Worlds)
+                {
+                    <option value="@w.Key">@w.Label</option>
+                }
+            </select>
+        </label>
+        <label>Süre (sn, 2–20)<input @bind="seconds" inputmode="numeric" /></label>
+        <button class="primary" type="submit" disabled="@busy">Kayıtlı koşuyu başlat</button>
+    </form>
+    @if (message is not null)
+    {
+        <p class="muted">@message</p>
+    }
+</section>
+
+<section class="card">
+    <h2>Canlı kare</h2>
+    <label class="chip"><input type="checkbox" checked="@live" @onchange="ToggleLive" /> Canlı izle (her 1,5 saniyede yenilenir)</label>
+    @if (live)
+    {
+        <img src="@LiveUrl" alt="Gazebo kamera karesi" style="width:100%;max-width:640px;border-radius:6px;display:block;margin-top:.5rem"
+             @onerror="() => noFrame = true" />
+        @if (noFrame)
+        {
+            <p class="muted">Henüz canlı kare yok. Bir kayıtlı koşu başlat; çalışırken burada görünür.</p>
+        }
+    }
+</section>
+
+<section class="card">
+    <h2>Kayıtlar</h2>
+    @if (recordings.Count == 0)
+    {
+        <p class="muted">Henüz kayıt yok. Bir koşu başlat ya da evrimin kazanan adaylarının kayıtlarını bekle.</p>
+    }
+    <div class="grid">
+        @foreach (var rec in recordings)
+        {
+            <article class="card">
+                <header><strong>@rec.Title</strong><span class="state">@rec.State</span></header>
+                @if (rec.Url is not null)
+                {
+                    <img src="@Link(rec.Url)" alt="@rec.Title" style="width:100%;border-radius:6px" />
+                    <p><a class="link" href="@Link(rec.Url)" download>GIF indir</a></p>
+                }
+                <p class="muted">@rec.Note</p>
+            </article>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Model { get; set; } = "";
+    [Parameter] public bool IsDefault { get; set; }
+
+    private sealed record World(string Key, string Label);
+    private sealed record Recording(string Title, string State, string? Url, string Note);
+
+    private static readonly World[] Worlds =
+    [
+        new("flat", "Düz zemin"), new("maze", "Labirent"), new("obstacle_low", "Alçak engeller"),
+        new("ramp_10deg", "10° rampa"), new("rough_terrain", "Engebeli arazi"),
+    ];
+
+    private readonly List<Recording> recordings = [];
+    private string world = "flat", seconds = "8";
+    private string? message;
+    private bool busy, live, noFrame;
+    private int tick;
+    private Timer? timer;
+
+    private string LiveUrl => $"api/v1/models/{Uri.EscapeDataString(Model)}/live?access_token={Tokens.Access}&t={tick}";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private string Link(string url) => $"{url.TrimStart('/')}?access_token={Tokens.Access}";
+
+    private async Task LoadAsync()
+    {
+        recordings.Clear();
+        try
+        {
+            foreach (var run in (await Api.GetSimRunsAsync()).Where(r => ModelOfRun(r) == Model))
+            {
+                recordings.Add(new Recording(run.Title, StateLabel(run.State), FirstUrl(run.Result), RunNote(run)));
+            }
+
+            foreach (var campaign in (await Api.GetCampaignsAsync()).Where(c => ModelOfCampaign(c) == Model))
+            {
+                foreach (var candidate in await Api.GetCandidatesAsync(campaign.Id))
+                {
+                    if (candidate.FitnessParts is { ValueKind: JsonValueKind.Object } parts && parts.TryGetProperty("media", out var media) && media.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var m in media.EnumerateArray())
+                        {
+                            recordings.Add(new Recording($"{campaign.Name} · nesil {candidate.Generation}", "evrim", m.GetProperty("url").GetString(), m.TryGetProperty("caption", out var c) ? c.GetString() ?? "" : ""));
+                        }
+                    }
+                }
+            }
+        }
+        catch (HttpRequestException)
+        {
+            message = "Kayıtlar alınamadı.";
+        }
+    }
+
+    private async Task StartRunAsync()
+    {
+        if (!int.TryParse(seconds, out var s) || s is < 2 or > 20)
+        {
+            message = "Süre 2–20 saniye olmalı.";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var spec = JsonSerializer.SerializeToElement(new { world_id = world, record = true, duration_s = s, model = Model });
+            var title = $"Kayıtlı koşu: {Worlds.First(w => w.Key == world).Label}";
+            (await Api.CreateTaskAsync(new NewTask(title, "exploration", "user:web-sim", 900m, null, spec))).EnsureSuccessStatusCode();
+            message = "Koşu kuyruğa alındı. Canlı kareyi aç; kayıt bitince galeride belirir (sayfayı yenile).";
+            live = true;
+            StartTimer();
+        }
+        catch (HttpRequestException)
+        {
+            message = "Koşu başlatılamadı.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void ToggleLive(ChangeEventArgs e)
+    {
+        live = e.Value is true;
+        noFrame = false;
+        if (live) { StartTimer(); } else { timer?.Dispose(); }
+    }
+
+    private void StartTimer()
+    {
+        timer?.Dispose();
+        timer = new Timer(_ => InvokeAsync(() => { tick++; noFrame = false; StateHasChanged(); }), null, 1500, 1500);
+    }
+
+    private static string? FirstUrl(JsonElement? result) =>
+        result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("media", out var m) && m.ValueKind == JsonValueKind.Array && m.GetArrayLength() > 0
+            ? m[0].GetProperty("url").GetString()
+            : null;
+
+    private static string StateLabel(string state) => state switch
+    {
+        "queued" => "sırada", "running" => "çalışıyor", "succeeded" => "bitti", "failed" => "başarısız", _ => state,
+    };
+
+    private static string RunNote(TaskItem run)
+    {
+        if (run.Result is not { ValueKind: JsonValueKind.Object } r)
+        {
+            return run.State is "queued" or "running" ? "Kayıt hazırlanıyor…" : "";
+        }
+
+        return r.TryGetProperty("goal_reached", out var g) && g.ValueKind != JsonValueKind.Null
+            ? (g.GetBoolean() ? "Hedefe ulaştı." : "Hedefe ulaşamadı.") + (r.TryGetProperty("tipped_over", out var t) && t.GetBoolean() ? " Devrildi." : "")
+            : "";
+    }
+
+    private string ModelOfRun(TaskItem r) =>
+        r.Spec is { ValueKind: JsonValueKind.Object } s && s.TryGetProperty("model", out var m) && m.GetString() is { Length: > 0 } name ? name : IsDefault ? Model : "";
+
+    private string ModelOfCampaign(Campaign c) =>
+        c.Budget is { ValueKind: JsonValueKind.Object } b && b.TryGetProperty("model", out var m) && m.GetString() is { Length: > 0 } name ? name : IsDefault ? Model : "";
+
+    public void Dispose() => timer?.Dispose();
+}

@@ -1,0 +1,14 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Sayfa bulunamadı — NEML</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p role="alert">Bu adreste bir sayfa yok.</p>
+        </LayoutView>
+    </NotFound>
+</Router>

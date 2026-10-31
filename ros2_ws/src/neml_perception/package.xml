@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>neml_perception</name>
+  <version>0.1.0</version>
+  <description>Derinlik kamerasi boru hatti. Ham goruntu swarm agina verilmez; robot uzerinde JPEG sikistirilir ve yalnizca talep uzerine gonderilir (NEML_SPEC.md SS17.2).</description>
+  <maintainer email="mustafa.gulsoy@neml.local">Mustafa Gulsoy</maintainer>
+  <license>AGPL-3.0-or-later</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>python3-opencv</depend>
+  <depend>python3-numpy</depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# git-lfs tracked extensions (NEML_SPEC.md §15)
+*.bag filter=lfs diff=lfs merge=lfs -text
+*.FCStd filter=lfs diff=lfs merge=lfs -text
+*.stl filter=lfs diff=lfs merge=lfs -text
+*.step filter=lfs diff=lfs merge=lfs -text
+*.3mf filter=lfs diff=lfs merge=lfs -text
+*.gcode filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+
+# Deploy/setup scripts target Ubuntu: keep LF even on Windows checkouts.
+*.sh text eol=lf
+mobile/web/drift_worker.js text eol=lf
+mobile/web/sqlite3.wasm -text

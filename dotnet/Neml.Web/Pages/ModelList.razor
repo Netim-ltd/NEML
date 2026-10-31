@@ -1,0 +1,181 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/evrim"
+@inject ApiClient Api
+@inject AssistantState Assistant
+
+<PageTitle>Modeller ve robotlar — NEML</PageTitle>
+
+<PageHeader Title="Modeller ve robotlar" Help="Labın tasarladığı robotlar ve parçalar. Birini aç: 3B görünüm, malzeme listesi ve yapım paketi orada." />
+<p class="muted">
+    Her robot modelinin kendi tasarımı, evrimi ve eğitimi vardır. Bir modeli seç: 3B tasarımını ve iç aksamını incele,
+    montaj/patlatma animasyonunu izle, o model için yapılan evrim ve simülasyon adımlarına bak.
+</p>
+
+<p>
+    <button class="primary" @onclick='() => Open("new_model")'>Yeni robot tasarla (asistanla)</button>
+    <button class="primary" @onclick='() => Open("import")'>GitHub'dan robot / kart içe aktar</button>
+</p>
+
+<h2>Hazır şablonlar</h2>
+<p class="muted">Tek tıkla lab bu talebi tasarlar (parça ağacı, CAD, URDF, denetim). İlerlemeyi Öğrenme sayfasında görürsün.</p>
+<div class="grid">
+    @foreach (var (title, brief) in Templates)
+    {
+        <article class="card">
+            <header><h3>@title</h3></header>
+            <p class="muted">@brief</p>
+            <button class="primary" disabled="@(busyModel == title)" @onclick="() => CreateAsync(title, brief)">Oluştur</button>
+        </article>
+    }
+</div>
+@if (created is not null) { <p class="state">@created</p> }
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (models.Length == 0 && error is null)
+{
+    <p class="muted">Henüz model yok. Lab ilk açıldığında seed genomdan oluşur.</p>
+}
+
+<p><label class="chip"><input type="checkbox" @bind="showArchived" /> Arşivlenenleri göster</label></p>
+<div class="grid">
+    @foreach (var m in models.Where(m => showArchived || m.Active != "deprecated"))
+    {
+        <article class="card">
+            <header>
+                <h2><a class="link" href="@($"evrim/{m.Name}")">@m.Name</a></h2>
+                <span class="state">@m.Active</span>
+            </header>
+            <p>Aktif genom: <code>@m.ActiveId</code>@(m.Fitness is { } f ? $" · puan {f:0.###}" : "")</p>
+            <p class="muted">@m.Versions genom sürümü · @m.Campaigns evrim kampanyası (@m.Running sürüyor)</p>
+            <p class="muted">@(m.Robots == 0 ? "Fiziksel robot yok: tüm çalışma simülasyonda." : $"{m.Robots} fiziksel robot")</p>
+            <a class="primary" href="@($"evrim/{m.Name}")">Aç: 3B tasarım, iç aksam, evrim ve eğitim</a>
+            @if (m.Active != "aktif")
+            {
+                <button class="ghost" disabled="@busyModel.Equals(m.Name)" @onclick="() => ArchiveAsync(m.Name)">Arşivle</button>
+            }
+        </article>
+    }
+</div>
+
+@if (robots.Length > 0)
+{
+    <h2>Robotlar</h2>
+    <div class="grid">
+        @foreach (var r in robots)
+        {
+            <article class="card">
+                <header><a class="link" href="@($"robotlar/{r.Id}")">@r.Id</a><span class="state">@r.State</span></header>
+                <p class="muted">Model: <a class="link" href="@($"evrim/{ModelOf(r.GenomeId)}")">@ModelOf(r.GenomeId)</a> · genom @r.GenomeId</p>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private sealed record ModelCard(string Name, string Active, string ActiveId, double? Fitness, int Versions, int Campaigns, int Running, int Robots);
+
+    private void Open(string mode)
+    {
+        Assistant.Mode = mode;
+        Assistant.Open = true;
+        Assistant.Notify();
+    }
+
+    private static readonly (string, string)[] Templates =
+    [
+        ("Gezgin robot", "Hobi bahçesinde dolaşan, 3 kg altı, dört tekerlekli küçük gezgin robot"),
+        ("Dört bacaklı yürüyen robot", "Engebeli arazide yürüyen, 12 servolu, dört bacaklı küçük robot"),
+        ("Robot kol", "Masa üstünde çalışan, 4 eksenli, tutucu uçlu küçük robot kol"),
+    ];
+    private string? created;
+
+    private async Task CreateAsync(string title, string brief)
+    {
+        busyModel = title;
+        try
+        {
+            await Api.LearnOpAsync(new { op = "design", brief });
+            created = $"{title}: tasarım başladı (Öğrenme sayfasında ilerler).";
+        }
+        catch (HttpRequestException)
+        {
+            error = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            busyModel = "";
+        }
+    }
+
+    private bool showArchived;
+    private string busyModel = "";
+
+    /// <summary>Hides a model's drafts and tests (never an active design).</summary>
+    private async Task ArchiveAsync(string name)
+    {
+        busyModel = name;
+        try
+        {
+            var accepted = await Api.ArchiveModelAsync(name);
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied") { await OnInitializedAsync(); }
+                else { error = status.Result is { ValueKind: System.Text.Json.JsonValueKind.Object } e && e.TryGetProperty("error", out var why) ? why.GetString() : "Arşivlenemedi."; }
+                break;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            error = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            busyModel = "";
+        }
+    }
+
+    private ModelCard[] models = [];
+    private Robot[] robots = [];
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tree = await Api.GetGenomeTreeAsync();
+            var campaigns = await Api.GetCampaignsAsync();
+            robots = await Api.GetRobotsAsync() ?? [];
+            var first = tree.Select(n => n.Name).FirstOrDefault();
+            models = [.. tree.GroupBy(n => n.Name).Select(g =>
+            {
+                var all = g.SelectMany(Flatten).ToList();
+                var active = all.FirstOrDefault(n => n.Status == "active") ?? all.LastOrDefault(n => n.Status is "draft" or "testing") ?? all[0];
+                var mine = campaigns.Where(c => ModelOfCampaign(c, first) == g.Key).ToList();
+                return new ModelCard(g.Key, active.Status == "active" ? "aktif" : active.Status, active.Id, active.FitnessScore,
+                    all.Count, mine.Count, mine.Count(c => c.State == "active"), robots.Count(r => ModelOf(r.GenomeId) == g.Key));
+            })];
+        }
+        catch (HttpRequestException)
+        {
+            error = "Modeller alınamadı.";
+        }
+    }
+
+    private static IEnumerable<GenomeNode> Flatten(GenomeNode n) =>
+        new[] { n }.Concat(n.Children.SelectMany(Flatten));
+
+    internal static string ModelOf(string? genomeId) => genomeId?.Split('@')[0] ?? "";
+
+    internal static string ModelOfCampaign(Campaign c, string? defaultModel) =>
+        c.Budget is { ValueKind: System.Text.Json.JsonValueKind.Object } b && b.TryGetProperty("model", out var m) && m.GetString() is { Length: > 0 } name
+            ? name
+            : defaultModel ?? "";
+}

@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  GENERATED BLOCK - DO NOT HAND-EDIT.
+
+  Source of truth: FreeCAD mass properties of the parametric templates in
+  hardware/cad/templates/ (leg_link_v1, foot_pad_v1, body_shell_v1, ...),
+  read out by generators/urdf.py exactly as NEML_SPEC.md SS12.2 prescribes:
+
+      mass_kg = volume_mm3 * 1e-9 * density_kg_m3
+      ixx..iyz = from_freecad_inertia(result["inertia"], mass_kg)
+
+  SS12.2 is binding: the inertia tensor ALWAYS comes from CAD mass properties.
+  Estimating it from a mesh is forbidden. Re-run the generator after any CAD
+  parameter change; do not tune these numbers by hand to make a sim look good.
+
+  Units: mass kg, inertia kg*m^2 about the link centre of mass, axes aligned
+  with the link frame. Material PA6-CF, density 1.17 g/cm^3 (SS13.3); the foot
+  pad is TPU.
+
+  Genome: quadruped_v2   Total CAD mass: 2.310 kg (SS13.3 body_mass_cad_kg)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- base_link: body shell + compute + battery tray -->
+  <xacro:property name="base_mass"  value="1.110"/>
+  <xacro:property name="base_ixx"   value="0.00296000"/>
+  <xacro:property name="base_iyy"   value="0.00592000"/>
+  <xacro:property name="base_izz"   value="0.00769600"/>
+  <xacro:property name="base_ixy"   value="0.0"/>
+  <xacro:property name="base_ixz"   value="0.0"/>
+  <xacro:property name="base_iyz"   value="0.0"/>
+
+  <!-- hip link: yaw bracket carrying one sts3215 -->
+  <xacro:property name="hip_mass"   value="0.060"/>
+  <xacro:property name="hip_ixx"    value="0.00002025"/>
+  <xacro:property name="hip_iyy"    value="0.00002263"/>
+  <xacro:property name="hip_izz"    value="0.00002263"/>
+  <xacro:property name="hip_ixy"    value="0.0"/>
+  <xacro:property name="hip_ixz"    value="0.0"/>
+  <xacro:property name="hip_iyz"    value="0.0"/>
+
+  <!-- upper link: leg_link_v1, length_mm 120, wall_mm 2.0, rib_count 3 -->
+  <xacro:property name="upper_mass" value="0.110"/>
+  <xacro:property name="upper_ixx"  value="0.00013919"/>
+  <xacro:property name="upper_iyy"  value="0.00014025"/>
+  <xacro:property name="upper_izz"  value="0.00001544"/>
+  <xacro:property name="upper_ixy"  value="0.0"/>
+  <xacro:property name="upper_ixz"  value="0.0"/>
+  <xacro:property name="upper_iyz"  value="0.0"/>
+
+  <!-- lower link: leg_link_v1, length_mm 110, wall_mm 1.8 -->
+  <xacro:property name="lower_mass" value="0.090"/>
+  <xacro:property name="lower_ixx"  value="0.00009507"/>
+  <xacro:property name="lower_iyy"  value="0.00009582"/>
+  <xacro:property name="lower_izz"  value="0.00000939"/>
+  <xacro:property name="lower_ixy"  value="0.0"/>
+  <xacro:property name="lower_ixz"  value="0.0"/>
+  <xacro:property name="lower_iyz"  value="0.0"/>
+
+  <!-- foot link: foot_pad_v1, TPU, diameter_mm 32, wall_mm 2.4 -->
+  <xacro:property name="foot_mass"  value="0.040"/>
+  <xacro:property name="foot_ixx"   value="0.00000450"/>
+  <xacro:property name="foot_iyy"   value="0.00000450"/>
+  <xacro:property name="foot_izz"   value="0.00000450"/>
+  <xacro:property name="foot_ixy"   value="0.0"/>
+  <xacro:property name="foot_ixz"   value="0.0"/>
+  <xacro:property name="foot_iyz"   value="0.0"/>
+
+</robot>

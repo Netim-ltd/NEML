@@ -1,0 +1,84 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/onaylar"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveClient Live
+
+<PageTitle>Onaylar — NEML</PageTitle>
+
+<PageHeader Title="Bekleyen onaylar" Help="Fiziksel olan her şey (baskı, parça siparişi, robot hareketi) senin onayını bekler. Süresi dolmadan karar ver; seviye ne kadar yüksekse o kadar dikkatli bak." />
+
+@if (error is not null)
+{
+    <Notice Kind="bad">@error</Notice>
+}
+
+@if (approvals.Count == 0)
+{
+    <EmptyState Title="Bekleyen onay yok" Hint="Lab bir baskı, sipariş ya da robot hareketi için izin istediğinde burada görünür; yeni bir istek geldiğinde menüde sayı çıkar." Icon="approval" />
+}
+else
+{
+    <div class="grid">
+        @foreach (var approval in approvals.OrderBy(a => a.ExpiresAt))
+        {
+            <article class="card approval">
+                <header>
+                    <span class="level l@approval.Level">Seviye @approval.Level — @ApprovalLevels.Label(approval.Level)</span>
+                    <span class="countdown @(Remaining(approval) < TimeSpan.FromHours(1) ? "bad" : null)">
+                        @ApprovalLevels.Countdown(Remaining(approval))
+                    </span>
+                </header>
+                <p><strong>@approval.SubjectKind</strong> · @approval.SubjectId</p>
+                <a class="btn" href="@($"onaylar/{approval.Id}")">İncele ve karar ver</a>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private readonly List<Approval> approvals = [];
+    private string? error;
+    private IDisposable?[] subscriptions = [];
+    private Timer? ticker;
+
+    protected override async Task OnInitializedAsync()
+    {
+        subscriptions =
+        [
+            Live.Hub.On<ApprovalRequestedEvent>("ApprovalRequested", _ => InvokeAsync(LoadAsync)),
+            Live.Hub.On<object>("ApprovalDecided", _ => InvokeAsync(LoadAsync)),
+        ];
+
+        ticker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            approvals.Clear();
+            approvals.AddRange(await Api.GetPendingApprovalsAsync() ?? []);
+            error = null;
+        }
+        catch (HttpRequestException)
+        {
+            error = "Onay listesi alınamadı.";
+        }
+
+        StateHasChanged();
+    }
+
+    private static TimeSpan Remaining(Approval approval) => approval.ExpiresAt - DateTimeOffset.UtcNow;
+
+    public void Dispose()
+    {
+        ticker?.Dispose();
+        foreach (var subscription in subscriptions)
+        {
+            subscription?.Dispose();
+        }
+    }
+}

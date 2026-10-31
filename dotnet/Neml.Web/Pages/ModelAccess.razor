@@ -1,0 +1,268 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/model-erisimi"
+@inject ApiClient Api
+@using System.Text.Json
+
+<PageTitle>Model erişimi — NEML</PageTitle>
+<PageHeader Title="Model erişimi" Help="Müşterilerin ve ürünlerin lab'ın dil modelini ve gömme servisini kullanması için her birine ayrı anahtar ve ayrı limit ver. Değişiklikler hemen geçerli olur. Bu sayfa yalnızca owner hesabıyla çalışır.">
+    <Actions><button class="ghost" type="button" disabled="@busy" aria-busy="@busy" @onclick="LoadAsync">Yenile</button></Actions>
+</PageHeader>
+
+<div aria-live="polite">
+    @if (message is not null)
+    {
+        <Notice Kind="@messageKind">@message</Notice>
+    }
+</div>
+
+@if (fresh is { } nk)
+{
+    <section class="card" aria-labelledby="newkey-title">
+        <h2 id="newkey-title">@nk.Name için yeni anahtar</h2>
+        <p><code>@nk.Key</code></p>
+        <Notice Kind="warn">Bu anahtar yalnızca şimdi görünür. Kopyala ve istemciye ver; kaybedersen "Anahtarı yenile" ile yenisini üret (eskisi çalışmaz).</Notice>
+        <button class="primary" type="button" @onclick="() => fresh = null">Kopyaladım, kapat</button>
+    </section>
+}
+
+@if (clients is null)
+{
+    <p class="muted" role="status">Yükleniyor…</p>
+}
+else
+{
+    <div class="kpis">
+        <div class="kpi"><div class="value">@clients.Count</div><div class="label">İstemci</div></div>
+        <div class="kpi"><div class="value">@clients.Sum(c => c.Requests).ToString("N0")</div><div class="label">Bugünkü istek</div></div>
+        <div class="kpi"><div class="value">@clients.Sum(c => c.Today).ToString("N0")</div><div class="label">Bugünkü token</div></div>
+    </div>
+
+    <section class="card" aria-labelledby="clients-title">
+        <h2 id="clients-title">İstemciler</h2>
+        @if (clients.Count == 0)
+        {
+            <EmptyState Title="Henüz istemci yok" Hint="Aşağıdaki formdan ilk istemciyi ekle; anahtarı bir kez gösterilir." Icon="key" />
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table>
+                    <caption class="visually-hidden">İstemciler ve limitleri</caption>
+                    <thead><tr><th scope="col">İstemci</th><th scope="col">Cevap başına token</th><th scope="col">Günlük token</th><th scope="col">Öncelik</th><th scope="col">Bugün</th><th scope="col"><span class="visually-hidden">İşlemler</span></th></tr></thead>
+                    <tbody>
+                    @foreach (var c in clients)
+                    {
+                        <tr>
+                            <th scope="row">@c.Name <span class="muted">(anahtar @c.KeyHint)</span></th>
+                            <td><input type="number" min="1" max="@contextTokens" @bind="c.MaxTokens" aria-label="@c.Name için cevap başına en çok token" style="width:7rem" /></td>
+                            <td><input type="number" min="0" @bind="c.DailyTokens" aria-label="@c.Name için günlük token (0 sınırsız)" style="width:8rem" /></td>
+                            <td><input type="number" min="0" max="100" @bind="c.Priority" aria-label="@c.Name için öncelik (düşük sayı önce)" style="width:5rem" /></td>
+                            <td>@Used(c)</td>
+                            <td>
+                                <div class="actions">
+                                    <button class="primary small" type="button" disabled="@busy" @onclick="() => SaveAsync(c)">Kaydet</button>
+                                    <button class="ghost small" type="button" disabled="@busy" @onclick="() => RotateAsync(c)">Anahtarı yenile</button>
+                                    <button class="danger small" type="button" disabled="@busy" @onclick="() => RemoveAsync(c)">@(confirmRemove == c.Name ? "Emin misin? Sil" : "Sil")</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <details>
+            <summary>Bu sayılar ne demek?</summary>
+            <ul>
+                <li><strong>Cevap başına token:</strong> tek bir cevabın en uzun hâli. İstek bundan fazlasını isterse kesilir. Çok verirsen cevap eksiksiz olur ama geç gelir (8000 token yaklaşık 9 dakika).</li>
+                <li><strong>Günlük token:</strong> bir günde (UTC) harcanabilecek toplam (soru + cevap). 0 sınırsız demek; dolunca ertesi güne kadar istek reddedilir.</li>
+                <li><strong>Öncelik:</strong> model aynı anda tek dış isteği işler. Sırada bekleyenlerden sayısı düşük olan önce çalışır; çalışan bir cevabı kesmez.</li>
+                <li><strong>Bağlam:</strong> modelin toplam belleği @contextTokens token (soru + cevap birlikte). Uzun bir soruyla çok uzun cevap istersen sığmaz.</li>
+            </ul>
+        </details>
+    </section>
+
+    <section class="card" aria-labelledby="new-title">
+        <h2 id="new-title">Yeni istemci</h2>
+        <form @onsubmit="AddAsync" @onsubmit:preventDefault>
+            <div class="inline-form">
+                <label for="nc-name">İstemci adı
+                    <input id="nc-name" @bind="newName" @bind:event="oninput" autocomplete="off" aria-invalid="@(NameError is not null && newName.Length > 0 ? "true" : null)" aria-describedby="nc-name-hint" />
+                    <span id="nc-name-hint" class="hint">Küçük harf, rakam, - veya _; örn. musteri-a, neml.</span>
+                </label>
+                <label for="nc-max">Cevap başına token
+                    <input id="nc-max" type="number" min="1" max="@contextTokens" @bind="newMax" />
+                </label>
+                <label for="nc-daily">Günlük token
+                    <input id="nc-daily" type="number" min="0" @bind="newDaily" />
+                    <span class="hint">0 = sınırsız</span>
+                </label>
+                <label for="nc-prio">Öncelik
+                    <input id="nc-prio" type="number" min="0" max="100" @bind="newPriority" />
+                    <span class="hint">düşük = önce</span>
+                </label>
+            </div>
+            @if (NameError is { } nameError && newName.Length > 0)
+            {
+                <p class="field-error" role="alert">@nameError</p>
+            }
+            <button class="primary" type="submit" disabled="@(busy || NameError is not null)" aria-busy="@busy">Ekle ve anahtar üret</button>
+        </form>
+    </section>
+
+    <section class="card" aria-labelledby="conn-title">
+        <h2 id="conn-title">Bağlantı bilgisi</h2>
+        <dl>
+            <dt>Temel adres</dt><dd><code>https://api.neml.easyway-sharing.com/v1</code></dd>
+            <dt>Başlık</dt><dd><code>Authorization: Bearer &lt;istemci anahtarı&gt;</code></dd>
+            <dt>Uçlar</dt><dd><code>/models</code>, <code>/chat/completions</code>, <code>/embeddings</code>, <code>/usage</code> (istemci kendi limitini ve kullanımını görür)</dd>
+            <dt>Belge</dt><dd><a href="https://api.neml.easyway-sharing.com/swagger" target="_blank" rel="noopener">Swagger</a> · OpenClaw ve RAG kurulumu: <code>docs/OPENCLAW.md</code></dd>
+        </dl>
+    </section>
+}
+
+@code {
+    private sealed class Row
+    {
+        public string Name { get; set; } = "";
+        public string KeyHint { get; set; } = "";
+        public int MaxTokens { get; set; }
+        public int DailyTokens { get; set; }
+        public int Priority { get; set; }
+        public long Today { get; set; }
+        public long Requests { get; set; }
+    }
+
+    private sealed record NewKey(string Name, string Key);
+
+    private List<Row>? clients;
+    private NewKey? fresh;
+    private int contextTokens = 16000;
+    private bool busy;
+    private string? message;
+    private string messageKind = "info";
+    private string? confirmRemove;
+    private string newName = "";
+    private int newMax = 2048, newDaily, newPriority = 10;
+
+    private string? NameError => System.Text.RegularExpressions.Regex.IsMatch(newName.Trim(), "^[a-z0-9][a-z0-9_-]{1,31}$")
+        ? null
+        : "Ad 2-32 karakter olmalı: küçük harf, rakam, - veya _ (boşluk ve büyük harf yok).";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private static string Used(Row c)
+    {
+        var text = $"{c.Today:N0} token, {c.Requests:N0} istek";
+        return c.DailyTokens > 0 ? $"{text} (%{Math.Min(100, c.Today * 100 / c.DailyTokens)})" : text;
+    }
+
+    private async Task LoadAsync() => Apply(await RunAsync(new { op = "gateway", action = "list" }));
+
+    private async Task SaveAsync(Row c)
+    {
+        if (await RunAsync(new { op = "gateway", action = "set", name = c.Name, maxTokens = c.MaxTokens, dailyTokens = c.DailyTokens, priority = c.Priority }) is { } r)
+        {
+            Apply(r);
+            Say("ok", $"{c.Name}: kaydedildi.");
+        }
+    }
+
+    private async Task RotateAsync(Row c)
+    {
+        if (await RunAsync(new { op = "gateway", action = "rotate", name = c.Name }) is { } r)
+        {
+            Apply(r);
+            Say("ok", $"{c.Name}: yeni anahtar üretildi, eskisi artık çalışmaz.");
+        }
+    }
+
+    private async Task RemoveAsync(Row c)
+    {
+        if (confirmRemove != c.Name) { confirmRemove = c.Name; return; }
+        confirmRemove = null;
+        if (await RunAsync(new { op = "gateway", action = "remove", name = c.Name }) is { } r)
+        {
+            Apply(r);
+            Say("ok", $"{c.Name}: silindi, anahtarı artık çalışmaz.");
+        }
+    }
+
+    private async Task AddAsync()
+    {
+        if (NameError is not null) { return; }
+        if (await RunAsync(new { op = "gateway", action = "set", name = newName.Trim(), maxTokens = newMax, dailyTokens = newDaily, priority = newPriority }) is { } r)
+        {
+            Apply(r);
+            Say("ok", $"{newName.Trim()}: eklendi.");
+            newName = "";
+        }
+    }
+
+    private void Say(string kind, string text)
+    {
+        messageKind = kind;
+        message = text;
+    }
+
+    private void Apply(JsonElement? result)
+    {
+        if (result is not { } r) { return; }
+        contextTokens = r.TryGetProperty("context_tokens", out var ct) && ct.ValueKind == JsonValueKind.Number ? ct.GetInt32() : contextTokens;
+        clients = r.GetProperty("clients").EnumerateArray().Select(e =>
+        {
+            var today = e.GetProperty("today");
+            long Num(string p) => today.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+            return new Row
+            {
+                Name = e.GetProperty("name").GetString() ?? "",
+                KeyHint = e.GetProperty("key_hint").GetString() ?? "",
+                MaxTokens = e.GetProperty("max_tokens").GetInt32(),
+                DailyTokens = e.GetProperty("daily_tokens").GetInt32(),
+                Priority = e.GetProperty("priority").GetInt32(),
+                Today = Num("prompt") + Num("completion"),
+                Requests = Num("requests"),
+            };
+        }).ToList();
+        if (r.TryGetProperty("new_key", out var nk) && nk.ValueKind == JsonValueKind.Object)
+        {
+            fresh = new NewKey(nk.GetProperty("name").GetString() ?? "", nk.GetProperty("key").GetString() ?? "");
+        }
+    }
+
+    private async Task<JsonElement?> RunAsync(object body, int tries = 30)
+    {
+        busy = true;
+        message = null;
+        try
+        {
+            var accepted = await Api.LearnOpAsync(body);
+            for (var i = 0; i < tries; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r) { return r; }
+                Say("bad", status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() ?? "Olmadı." : "Olmadı.");
+                return null;
+            }
+
+            Say("warn", "Lab cevap vermedi; biraz sonra Yenile ile tekrar dene.");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            Say("bad", "Bu ekran yalnızca owner hesabıyla çalışır.");
+        }
+        catch (HttpRequestException)
+        {
+            Say("bad", "İstek gönderilemedi. Bağlantını kontrol edip yeniden dene.");
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        return null;
+    }
+}

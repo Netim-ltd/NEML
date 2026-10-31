@@ -1,0 +1,37 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@* One icon family (24px grid, 1.8 stroke, outline); decorative unless a Label is given. *@
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="@(Label is null ? "true" : null)" role="@(Label is null ? null : "img")" aria-label="@Label" focusable="false">@((MarkupString)Path)</svg>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? Label { get; set; }
+
+    private string Path => Name switch
+    {
+        "home" => "<path d='M3 11.5 12 4l9 7.5'/><path d='M5 10v10h14V10'/><path d='M10 20v-6h4v6'/>",
+        "approval" => "<circle cx='12' cy='12' r='9'/><path d='m8 12 3 3 5-6'/>",
+        "brain" => "<rect x='6' y='6' width='12' height='12' rx='2'/><path d='M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4'/>",
+        "learn" => "<path d='M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z'/><path d='M4 19V5'/><path d='M9 8h6'/>",
+        "box" => "<path d='M21 8 12 3 3 8v8l9 5 9-5z'/><path d='m3 8 9 5 9-5M12 13v8'/>",
+        "genome" => "<circle cx='6' cy='6' r='2.5'/><circle cx='6' cy='18' r='2.5'/><circle cx='18' cy='12' r='2.5'/><path d='M6 8.5v7M8.5 6c5 0 7 2 7.5 4M8.5 18c5 0 7-2 7.5-4'/>",
+        "skill" => "<path d='M13 2 4 14h7l-1 8 9-12h-7z'/>",
+        "tasks" => "<path d='M9 6h11M9 12h11M9 18h11'/><path d='m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17'/>",
+        "factory" => "<path d='M3 21V10l6 4v-4l6 4V6h4v15z'/><path d='M7 17h2M12 17h2M17 17h1'/>",
+        "bot" => "<rect x='4' y='8' width='16' height='12' rx='3'/><path d='M12 4v4M9 14v1M15 14v1'/><circle cx='12' cy='3.5' r='1'/>",
+        "key" => "<circle cx='8' cy='15' r='4'/><path d='m11 12 9-9M16 7l3 3M14 9l2 2'/>",
+        "logs" => "<path d='M6 3h9l4 4v14H6z'/><path d='M14 3v5h5M9 13h7M9 17h7'/>",
+        "settings" => "<circle cx='12' cy='12' r='3'/><path d='M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2-1.2L14.3 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.3-.9-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7 7 0 0 0 2-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2z'/>",
+        "menu" => "<path d='M4 6h16M4 12h16M4 18h16'/>",
+        "close" => "<path d='M6 6l12 12M18 6 6 18'/>",
+        "sun" => "<circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/>",
+        "moon" => "<path d='M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z'/>",
+        "logout" => "<path d='M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4M16 8l4 4-4 4M20 12H9'/>",
+        "inbox" => "<path d='M4 13 6 5h12l2 8v6H4z'/><path d='M4 13h5l1 2h4l1-2h5'/>",
+        "alert" => "<path d='M12 3 2.5 20h19z'/><path d='M12 10v5M12 18v.5'/>",
+        "info" => "<circle cx='12' cy='12' r='9'/><path d='M12 11v6M12 7.5v.5'/>",
+        "check" => "<path d='m5 12 5 5 9-10'/>",
+        "chat" => "<path d='M4 5h16v11H9l-5 4z'/>",
+        _ => "<circle cx='12' cy='12' r='9'/>",
+    };
+}

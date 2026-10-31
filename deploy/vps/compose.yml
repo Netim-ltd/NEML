@@ -1,0 +1,255 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Whole NEML lab stack on a CPU-only Linux host (no NVIDIA GPU): llama.cpp replaces vLLM,
+# Gazebo and FreeCAD run in their own images. Run from this directory:
+#   cp .env.example .env   # fill the secrets
+#   ./prepare.sh           # fetches the model, writes llm.yaml
+#   docker compose up -d --build
+name: neml
+
+x-brain-image: &brain-image
+  image: neml/brain:1.0
+  build: {context: ../.., dockerfile: docker/brain/Dockerfile}
+  restart: unless-stopped
+  env_file: .env
+  logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}  # logs must not eat the disk
+
+x-brain-env: &brain-env
+    NEML_DB_URL: postgresql+asyncpg://neml:${POSTGRES_PASSWORD}@postgres:5432/neml_local
+    NEML_VLLM_URL: http://llm:8080/v1
+    NEML_EMBED_URL: http://embed:8081
+    HF_HOME: /srv/neml/artifacts/hf
+    NEML_MCP_URL_FREECAD: http://mcp-cad:9104/mcp
+    NEML_MCP_URL_KICAD: http://mcp-kicad:9105/mcp
+    NEML_MCP_URL_SIM: http://mcp-sim:9101/mcp
+    NEML_MCP_URL_FAB: http://mcp-fab:9102/mcp
+    NEML_MCP_URL_GENOME: http://mcp-genome:9103/mcp
+    NEML_MCP_URL_POSTGRES: http://mcp-pg:9106/mcp
+    NEML_MCP_URL_FILESYSTEM: http://mcp-fs:9107/mcp
+    NEML_MCP_URL_GIT: http://mcp-git:9108/mcp
+    NEML_MCP_URL_BLENDER: http://mcp-blender:9110/mcp
+    NEML_MCP_URL_FETCH: http://mcp-fetch:9109/mcp
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: neml
+      POSTGRES_DB: neml_local
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../../docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-neml.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neml -d neml_local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  embed:
+    image: neml/embed:1.0
+    build: {context: ../.., dockerfile: docker/embed/Dockerfile}
+    restart: unless-stopped
+    environment: {OMP_NUM_THREADS: "2"}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    restart: unless-stopped
+    command: ["-m", "/models/model.gguf", "-c", "${NEML_LLM_CTX:-16384}", "-t", "${NEML_LLM_THREADS:-4}", "-np", "${NEML_LLM_SLOTS:-2}",
+              "--host", "0.0.0.0", "--port", "8080"]
+    volumes: ["${NEML_MODEL_DIR:-./models}:/models:ro"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  migrate:
+    <<: *brain-image
+    restart: "no"
+    command: ["alembic", "-c", "brain/alembic.ini", "upgrade", "head"]
+    environment:
+      NEML_DB_URL: postgresql+asyncpg://neml:${POSTGRES_PASSWORD}@postgres:5432/neml_local
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  brain:
+    <<: *brain-image
+    command: ["uvicorn", "neml_brain.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    ports: ["${NEML_BIND_IP:-127.0.0.1}:8080:8080"]
+    environment: *brain-env
+    volumes:
+      - ./llm.yaml:/app/config/llm.yaml:ro
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+      - neml-state:/var/lib/neml
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      embed: {condition: service_healthy}
+      llm: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  autonomy:
+    <<: *brain-image
+    command: ["python", "-m", "neml_brain.autonomy"]
+    environment:
+      <<: *brain-env
+      NEML_AUTONOMY_ENABLED: "true"
+      NEML_AUTONOMY_MODE: sim_only
+    volumes:
+      - ./llm.yaml:/app/config/llm.yaml:ro
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+      - neml-state:/var/lib/neml
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      embed: {condition: service_healthy}
+      llm: {condition: service_started}
+
+  gateway:
+    image: neml/brain:1.0  # the brain image; only the gateway module runs, with no database or lab secrets
+    restart: unless-stopped
+    command: ["uvicorn", "neml_brain.gateway:app", "--host", "0.0.0.0", "--port", "8090"]
+    ports: ["127.0.0.1:8090:8090"]  # host only: reach it through an SSH tunnel or a Caddy site you add yourself
+    environment:
+      NEML_GATEWAY_KEYS: ${NEML_GATEWAY_KEYS:-}
+      NEML_MODEL: ${NEML_MODEL:-neml-main}
+    volumes: [neml-state:/var/lib/neml]  # clients.json (keys and limits per client) and usage.json live in gateway/
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    depends_on:
+      llm: {condition: service_started}
+      embed: {condition: service_healthy}
+
+  mcp-sim:
+    image: neml/sim-mcp:1.0
+    build: {context: ../.., dockerfile: docker/sim/Dockerfile}
+    restart: unless-stopped
+    environment: {NEML_ARTIFACT_DIR: /srv/neml/artifacts}
+    volumes: [neml-work:/srv/neml/work, neml-artifacts:/srv/neml/artifacts]
+
+  mcp-cad:
+    image: neml/cad-mcp:1.0
+    build: {context: ../.., dockerfile: docker/cad/Dockerfile}
+    restart: unless-stopped
+    volumes: [neml-work:/srv/neml/work, neml-artifacts:/srv/neml/artifacts]
+
+  mcp-kicad:
+    image: neml/kicad-mcp:1.0
+    build: {context: ../.., dockerfile: docker/kicad/Dockerfile}
+    restart: unless-stopped
+    environment: {NEML_ARTIFACT_DIR: /srv/neml/artifacts}
+    volumes: [neml-artifacts:/srv/neml/artifacts]
+
+  mcp-blender:
+    image: neml/blender-mcp:1.0
+    build: {context: ../.., dockerfile: docker/blender/Dockerfile}
+    restart: unless-stopped
+    environment: {NEML_ARTIFACT_DIR: /srv/neml/artifacts, NEML_RENDER_PERCENT: "50", NEML_RENDER_FRAME_STEP: "4"}
+    volumes: [neml-artifacts:/srv/neml/artifacts]
+
+  mcp-fab:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_fab.server:app", "--host", "0.0.0.0", "--port", "9102"]
+    volumes: [neml-work:/srv/neml/work, neml-artifacts:/srv/neml/artifacts]
+
+  mcp-genome:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_genome.server:app", "--host", "0.0.0.0", "--port", "9103"]
+
+  mcp-pg:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_pg.server:app", "--host", "0.0.0.0", "--port", "9106"]
+    environment:
+      NEML_DB_URL_READONLY: postgresql://neml_ro:${POSTGRES_RO_PASSWORD}@postgres:5432/neml_local
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  mcp-fs:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_fs.server:app", "--host", "0.0.0.0", "--port", "9107"]
+    environment: {NEML_FS_ALLOWED_PATHS: "/srv/neml/work:/srv/neml/artifacts"}
+    volumes: [neml-work:/srv/neml/work, neml-artifacts:/srv/neml/artifacts]
+
+  mcp-fetch:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_fetch.server:app", "--host", "0.0.0.0", "--port", "9109"]
+    environment:
+      NEML_GITHUB_TOKEN: "${NEML_GITHUB_TOKEN:-}"  # optional: lifts the anonymous GitHub API limit (60/h)
+      NEML_FETCH_ALLOWLIST: "docs.ros.org,gazebosim.org,wiki.freecad.org,docs.kicad.org,help.prusa3d.com,docs.vllm.ai,www.postgresql.org,en.wikipedia.org,arxiv.org,raw.githubusercontent.com,emanual.robotis.com,api.github.com,export.arxiv.org,hnrss.org,discourse.ros.org,hackaday.com,spectrum.ieee.org,bostondynamics.com,www.unitree.com,www.anybotics.com,robotis.com,mastodon.social,github.blog,ros.org,openrobotics.org,www.robotistan.com,www.direnc.net,www.robo90.com"
+    volumes: [neml-artifacts:/srv/neml/artifacts]
+
+  mcp-git:
+    <<: *brain-image
+    command: ["uvicorn", "mcp_servers.neml_mcp_git.server:app", "--host", "0.0.0.0", "--port", "9108"]
+    environment: {NEML_GIT_REPO: /srv/neml/work/repo}
+    volumes: [neml-work:/srv/neml/work]
+
+  # ---- cloud side: API + Blazor web app (one process), reached through the host Caddy ----
+  cloud-db:
+    image: pgvector/pgvector:pg16
+    restart: "no"
+    environment: {PGPASSWORD: "${POSTGRES_PASSWORD}"}
+    entrypoint: ["sh", "-c", "psql -h postgres -U neml -d neml_local -tc \"SELECT 1 FROM pg_database WHERE datname='neml_cloud'\" | grep -q 1 || psql -h postgres -U neml -d neml_local -c 'CREATE DATABASE neml_cloud'"]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  api-migrate: &api
+    image: neml/api:1.0
+    build: {context: ., dockerfile: api.Dockerfile}
+    restart: "no"
+    command: [--migrate]
+    environment: &api-env
+      ConnectionStrings__Default: "Host=postgres;Database=neml_cloud;Username=neml;Password=${POSTGRES_PASSWORD}"
+      Jwt__Key: ${NEML_JWT_KEY:?set NEML_JWT_KEY (32+ chars)}
+      Bridge__ApiKey: ${NEML_API_KEY}
+      Bridge__NodeIds__0: ${NEML_NODE_ID}
+      Media__Dir: /data/media
+      Cors__Origins__0: ${NEML_PUBLIC_URL:?set NEML_PUBLIC_URL}
+      Cors__Origins__1: ${NEML_PANEL_URL:-${NEML_PUBLIC_URL}}
+      NEML_OWNER_EMAIL: ${NEML_OWNER_EMAIL:?set NEML_OWNER_EMAIL}
+      NEML_OWNER_PASSWORD: ${NEML_OWNER_PASSWORD:?set NEML_OWNER_PASSWORD}
+    depends_on:
+      cloud-db: {condition: service_completed_successfully}
+
+  api-owner:
+    <<: *api
+    command: [--provision-owner]
+    depends_on:
+      api-migrate: {condition: service_completed_successfully}
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    command: []
+    ports: ["127.0.0.1:8081:8080"]
+    volumes: [neml-media:/data/media]
+    depends_on:
+      api-owner: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  pgdata:
+  neml-work:
+  neml-artifacts:
+  neml-state:
+  neml-media:

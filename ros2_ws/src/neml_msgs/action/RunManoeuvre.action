@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Run one of the five reference manoeuvres of the sim-to-real protocol
+# (NEML_SPEC.md SS11.3). The same goal runs in sim and on hardware; the
+# reality gap is computed from the two result sets.
+
+string manoeuvre_id          # M1_straight | M2_turn | M3_step | M4_stand | M5_payload
+uint32 repeats               # repetitions to run; SS11.3 uses 10
+uint32 seed                  # RNG seed; all randomness derives from it (SS11.2 rule 1)
+---
+bool success                 # true when every repeat completed
+float64[] deviation_m        # per-repeat path or pose deviation, metres
+float64[] energy_wh          # per-repeat consumed energy, watt-hours
+float64[] duration_s         # per-repeat duration, seconds
+float64 max_joint_torque_nm  # peak joint torque over all repeats, newton-metres
+float64 body_oscillation_rms_m  # body oscillation RMS, metres (M4_stand); 0.0 otherwise
+---
+uint32 repeat_index          # zero-based index of the repeat in progress
+float64 elapsed_s            # elapsed time inside the current repeat, seconds

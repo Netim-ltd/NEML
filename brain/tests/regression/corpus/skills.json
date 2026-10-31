@@ -1,0 +1,51 @@
+{
+  "_note": "Fixture stand-in for the SPEC 7 tables the gate 7 harness reads (skills, skill_validations, sim_runs). Shape matches the columns; `seeds` holds the distinct seeds of a validation, `trials` the total runs across them (SPEC 11.3 repeats a seeded manoeuvre). JSON carries no copyright header - it has no comment syntax.",
+  "skills": [
+    {"id": "walk_flat@4", "skill_key": "walk_flat", "version": 4, "genome_id": "quadruped_v2", "status": "validated"},
+    {"id": "climb_small_obstacle@3", "skill_key": "climb_small_obstacle", "version": 3, "genome_id": "quadruped_v2", "status": "validated"},
+    {"id": "turn_in_place@2", "skill_key": "turn_in_place", "version": 2, "genome_id": "quadruped_v2", "status": "validated"},
+    {"id": "stand_still@5", "skill_key": "stand_still", "version": 5, "genome_id": "quadruped_v2", "status": "candidate"}
+  ],
+  "skill_validations": [
+    {"id": 1, "skill_id": "walk_flat@4", "env": "sim", "trials": 24, "successes": 22,
+     "ci95_low": 0.7343, "ci95_high": 0.9772, "seeds": [410001, 410002, 410003, 410004, 410005, 410006],
+     "failure_modes": ["foot_slip"], "run_at": "2026-02-01T09:00:00+00:00"},
+    {"id": 2, "skill_id": "walk_flat@4", "env": "sim", "trials": 24, "successes": 21,
+     "ci95_low": 0.6824, "ci95_high": 0.9601, "seeds": [410007, 410008, 410009, 410010, 410011, 410012],
+     "failure_modes": ["foot_slip", "yaw_drift"], "run_at": "2026-03-05T09:12:00+00:00"},
+    {"id": 3, "skill_id": "walk_flat@4", "env": "real", "trials": 24, "successes": 10,
+     "ci95_low": 0.2435, "ci95_high": 0.6144, "seeds": [410013, 410014],
+     "failure_modes": ["carpet_friction"], "run_at": "2026-03-06T14:30:00+00:00"},
+
+    {"id": 4, "skill_id": "climb_small_obstacle@3", "env": "sim", "trials": 24, "successes": 19,
+     "ci95_low": 0.5921, "ci95_high": 0.9077, "seeds": [420001, 420002, 420003, 420004, 420005, 420006],
+     "failure_modes": ["toe_catch"], "run_at": "2026-02-02T10:00:00+00:00"},
+    {"id": 5, "skill_id": "climb_small_obstacle@3", "env": "sim", "trials": 8, "successes": 5,
+     "ci95_low": 0.3041, "ci95_high": 0.8626, "seeds": [420007, 420008],
+     "failure_modes": ["toe_catch"], "run_at": "2026-03-06T10:05:00+00:00"},
+
+    {"id": 6, "skill_id": "turn_in_place@2", "env": "sim", "trials": 24, "successes": 21,
+     "ci95_low": 0.6824, "ci95_high": 0.9601, "seeds": [430001, 430002, 430003, 430004, 430005, 430006],
+     "failure_modes": ["overshoot_deg"], "run_at": "2026-02-03T08:40:00+00:00"},
+    {"id": 7, "skill_id": "turn_in_place@2", "env": "sim", "trials": 24, "successes": 21,
+     "ci95_low": 0.6824, "ci95_high": 0.9601, "seeds": [430007, 430008, 430009, 430010, 430011, 430012],
+     "failure_modes": ["overshoot_deg"], "run_at": "2026-03-07T08:44:00+00:00"},
+    {"id": 8, "skill_id": "turn_in_place@2", "env": "sim", "trials": 24, "successes": 12,
+     "ci95_low": 0.3147, "ci95_high": 0.6853, "seeds": [430013, 430014, 430015],
+     "failure_modes": ["overshoot_deg", "solver_divergence"], "run_at": "2026-03-20T08:39:00+00:00"},
+
+    {"id": 9, "skill_id": "stand_still@5", "env": "sim", "trials": 24, "successes": 23,
+     "ci95_low": 0.7935, "ci95_high": 0.9926, "seeds": [440001, 440002, 440003, 440004, 440005, 440006],
+     "failure_modes": [], "run_at": "2026-02-04T11:00:00+00:00"},
+    {"id": 10, "skill_id": "stand_still@5", "env": "sim", "trials": 24, "successes": 6,
+     "ci95_low": 0.1204, "ci95_high": 0.4534, "seeds": [440007, 440008, 440009, 440010, 440011, 440012],
+     "failure_modes": ["knee_collapse"], "run_at": "2026-03-08T11:03:00+00:00"}
+  ],
+  "sim_runs": [
+    {"seed": 410001, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:a3f9..", "deterministic": true},
+    {"seed": 430007, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:a3f9..", "deterministic": true},
+    {"seed": 430013, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:c118..", "deterministic": true},
+    {"seed": 430014, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:c118..", "deterministic": false},
+    {"seed": 440007, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:a3f9..", "deterministic": true}
+  ]
+}

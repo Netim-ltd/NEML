@@ -1,0 +1,174 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/onaylar/{Id:guid}"
+@implements IDisposable
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Onay — NEML</PageTitle>
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (approval is null)
+{
+    <p class="muted">Yükleniyor…</p>
+}
+else
+{
+    <h1>Seviye @approval.Level — @ApprovalLevels.Label(approval.Level)</h1>
+    <p class="muted">
+        @approval.SubjectKind · @approval.SubjectId ·
+        kalan süre <span class="countdown">@ApprovalLevels.Countdown(approval.ExpiresAt - DateTimeOffset.UtcNow)</span>
+    </p>
+
+    @if (ApprovalPayload.Summary(approval.Payload) is { Length: > 0 } summary)
+    {
+        <section class="card">
+            <h2>Özet</h2>
+            <p>@summary</p>
+        </section>
+    }
+
+    @if (approval.PreviewUrl is { Length: > 0 } preview)
+    {
+        <section class="card">
+            <h2>G-code önizleme</h2>
+            @* ponytail: the API serves the PNG on a token-free URL lifted out of the payload.
+               If it ever needs the bearer header, fetch the bytes through ApiClient and render
+               a data: URI instead. *@
+            <img class="preview" src="@preview" alt="G-code önizleme" />
+        </section>
+    }
+
+    <section class="card">
+        <h2>Maliyet ve süre</h2>
+        <dl>
+            <dt>Tahmini süre</dt>
+            <dd>@Hours(ApprovalPayload.Number(approval.Payload, "est_time_h", "estTimeH"))</dd>
+            <dt>Filament</dt>
+            <dd>@Grams(ApprovalPayload.Number(approval.Payload, "est_filament_g", "estFilamentG"))</dd>
+            <dt>Maliyet</dt>
+            <dd>@Cost(ApprovalPayload.Number(approval.Payload, "est_cost_try", "estCostTry"))</dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <h2>Ham istek</h2>
+        <pre>@ApprovalPayload.Pretty(approval.Payload)</pre>
+    </section>
+
+    @if (approval.Decision is { } decision)
+    {
+        <p class="muted">Bu istek zaten karara bağlandı: <strong>@decision</strong> (@(approval.DecidedBy ?? "—"))</p>
+    }
+    else
+    {
+        <section class="card">
+            <h2>Karar</h2>
+            <label>
+                Not
+                <textarea @bind="note" rows="3"></textarea>
+            </label>
+
+            @if (approval.Level == 4)
+            {
+                <label class="confirm">
+                    Seviye 4 için onay metnini yazın: <code>@ApprovalLevels.Level4Phrase</code>
+                    <input @bind="confirmation" @bind:event="oninput" autocomplete="off" />
+                </label>
+            }
+
+            <div class="actions">
+                <button class="primary" disabled="@(busy || !CanApprove)" @onclick="ApproveAsync">Onayla</button>
+                <button class="danger" disabled="@busy" @onclick="RejectAsync">Reddet</button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Approval? approval;
+    private string note = string.Empty;
+    private string confirmation = string.Empty;
+    private string? error;
+    private bool busy;
+    private Timer? ticker;
+
+    private bool CanApprove => approval?.Level != 4 || ApprovalLevels.IsLevel4Confirmed(confirmation);
+
+    protected override async Task OnInitializedAsync()
+    {
+        ticker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+        try
+        {
+            approval = await Api.GetApprovalAsync(Id);
+        }
+        catch (HttpRequestException)
+        {
+            error = "Onay alınamadı.";
+        }
+    }
+
+    private Task ApproveAsync() => DecideAsync(approve: true);
+
+    private Task RejectAsync() => DecideAsync(approve: false);
+
+    private async Task DecideAsync(bool approve)
+    {
+        // Belt and braces: §5.5 makes the server the authority, this only stops a slip.
+        if (approve && !CanApprove)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            var payload = new ApprovalDecision(
+                string.IsNullOrWhiteSpace(note) ? null : note,
+                approval?.Level == 4 ? confirmation : null);
+
+            var response = approve
+                ? await Api.ApproveAsync(Id, payload)
+                : await Api.RejectAsync(Id, payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Nav.NavigateTo("onaylar");
+                return;
+            }
+
+            error = response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Forbidden => "Bu onay için yetkiniz yok (seviye 4 yalnızca sahibe açıktır).",
+                System.Net.HttpStatusCode.Conflict => "Bu istek zaten karara bağlanmış.",
+                _ => "Karar kaydedilemedi.",
+            };
+        }
+        catch (HttpRequestException)
+        {
+            error = "Sunucuya ulaşılamadı.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string Hours(double? hours) =>
+        hours is null ? "—" : $"{(int)hours.Value} sa {(int)Math.Round((hours.Value % 1) * 60)} dk";
+
+    private static string Grams(double? grams) => grams is null ? "—" : $"{grams.Value:0.#} g";
+
+    private static string Cost(double? cost) => cost is null ? "—" : $"{cost.Value:0.##} ₺";
+
+    public void Dispose() => ticker?.Dispose();
+}

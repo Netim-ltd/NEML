@@ -1,0 +1,100 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §4.2 / §4.4 / §4.7. Single resident model, six prompt
+# profiles, one active provider.
+
+# §4.7 — VllmProvider is active, RemoteOpenAIProvider is present, tested and
+# disabled. This is a decision, not a gap.
+provider: vllm
+
+providers:
+  vllm:
+    enabled: true
+    base_url: ${NEML_VLLM_URL}          # http://localhost:8000/v1
+    model: Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ
+    # §4.2 — must match docker/vllm/docker-compose.yml command flags.
+    quantization: awq
+    dtype: half
+    max_model_len: 4096
+    gpu_memory_utilization: 0.88
+    enforce_eager: true
+    max_num_seqs: 2
+    swap_space: 2
+    guided_decoding_backend: xgrammar
+    request_timeout_s: 120
+  # GPU-less hosts (docker/compose for CPU servers): llama.cpp server, grammar constrained.
+  llama_cpp:
+    enabled: false
+    base_url: ${NEML_VLLM_URL}          # http://llm:8080/v1
+    model: qwen2.5-coder-1.5b-instruct-q4_k_m
+    request_timeout_s: 900
+  remote_openai:
+    enabled: false                       # §4.7 — closed path, tested only.
+    base_url: https://api.openai.example/v1
+    model: CHANGEME
+    api_key_env: NEML_REMOTE_LLM_KEY     # §5.4: secret stays in the process env.
+
+# §4.4 — one model, six profiles. Only `summarize` is unconstrained and its
+# output is shown to a human, never fed back into the system.
+profiles:
+  router:
+    max_tokens: 8
+    constraint: guided_choice
+    task: Intent classification
+  param_mech:
+    max_tokens: 256
+    constraint: guided_json
+    task: Mechanical parameters
+  param_elec:
+    max_tokens: 256
+    constraint: guided_json
+    task: Electronic parameters
+  param_skill:
+    max_tokens: 256
+    constraint: guided_json
+    task: Behaviour parameters
+  failure_tag:
+    max_tokens: 64
+    constraint: guided_choice
+    task: Failure mode tagging
+    # Owner decision 4 (amends §4.4): fixed choice list. Mirror of
+    # neml_brain/llm/profiles.py FAILURE_MODES, which is the one definition;
+    # a test fails if the two drift. "unknown" is the deliberate escape hatch.
+    choices:
+      - joint_limit_hit
+      - torque_saturation
+      - balance_lost
+      - foot_slip
+      - collision
+      - goal_not_reached
+      - timeout
+      - sensor_dropout
+      - power_brownout
+      - unknown
+  summarize:
+    max_tokens: 384
+    constraint: none
+    task: Report text (human-facing only)
+
+# §4.3 stage 1 — the router may only emit one of these.
+intents:
+  - create_task
+  - update_task
+  - cancel_task
+  - query_status
+  - query_telemetry
+  - query_skill
+  - mech_param_change
+  - elec_param_change
+  - skill_tune
+  - run_sim_campaign
+  - explain
+  - unknown
+
+# §4.6 — embeddings run on CPU; there is no VRAM left for them.
+embedding:
+  model: intfloat/multilingual-e5-small
+  dim: 384
+  runtime: onnxruntime-cpu-int8
+  url: ${NEML_EMBED_URL}

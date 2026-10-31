@@ -1,0 +1,193 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inject TokenStore Tokens
+@using System.Text.Json
+
+@* Everything a finished board job knows, in tabs: the board itself, the schematic, parts and pins, nets, the bill of materials, the checks, the files. *@
+<div class="tabs">
+    @foreach (var (key, label) in Tabs)
+    {
+        <button class="@(tab == key ? "active" : "")" type="button" @onclick="() => tab = key">@label</button>
+    }
+</div>
+
+@switch (tab)
+{
+    case "board":
+        @if (Has(Result, "crosscheck", "geometry"))
+        {
+            <BoardView Geometry="Geometry" W="Size(0)" H="Size(1)" />
+        }
+        else if (Result.GetProperty("urls").TryGetProperty("board_svg", out var board))
+        {
+            <p class="muted">Bu kartın ayrıntılı çizimi yok (eski sürüm); resim gösteriliyor.</p>
+            <img src="@Link(board.GetString()!)" alt="Kart" style="max-width:100%;background:#fff;border-radius:6px" />
+        }
+        break;
+
+    case "schematic":
+        @if (Result.GetProperty("urls").TryGetProperty("schematic_svg", out var sch))
+        {
+            <img src="@Link(sch.GetString()!)" alt="Şema" style="max-width:100%;background:#fff;border-radius:6px" />
+        }
+        break;
+
+    case "parts":
+        @foreach (var p in PartsOf())
+        {
+            <details>
+                <summary><strong>@p.GetProperty("ref").GetString()</strong> · @p.GetProperty("value").GetString() · <span class="muted">@p.GetProperty("kind").GetString() · @p.GetProperty("package").GetString() · @p.GetProperty("part_number").GetString() · @p.GetProperty("supplier").GetString()</span></summary>
+                <table>
+                    <thead><tr><th>Pin</th><th>Ad</th><th>Tür</th><th>Ağ</th></tr></thead>
+                    <tbody>
+                        @foreach (var pin in p.GetProperty("pins").EnumerateArray())
+                        {
+                            <tr><td>@pin[0].GetString()</td><td>@pin[1].GetString()</td><td>@pin[2].GetString()</td><td><strong>@pin[3].GetString()</strong></td></tr>
+                        }
+                    </tbody>
+                </table>
+            </details>
+        }
+        break;
+
+    case "nets":
+        <table>
+            <thead><tr><th>Ağ</th><th>Bağlı pinler</th><th>Durum</th></tr></thead>
+            <tbody>
+                @foreach (var (name, pins) in NetsOf())
+                {
+                    <tr>
+                        <td><strong>@name</strong></td>
+                        <td>@string.Join(", ", pins)</td>
+                        <td>@NetState(name)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        break;
+
+    case "bom":
+        <table>
+            <thead><tr><th>Parça</th><th>Referans</th><th>Adet</th><th>Tedarikçi</th><th>Türkiye temini</th><th>Fiyat (TL)</th></tr></thead>
+            <tbody>
+                @foreach (var row in Result.GetProperty("bom").EnumerateArray())
+                {
+                    var tr = row.GetProperty("tr");
+                    <tr>
+                        <td>@row.GetProperty("part_number").GetString()</td>
+                        <td>@row.GetProperty("ref").GetString()</td>
+                        <td>@row.GetProperty("qty").GetString()</td>
+                        <td>@row.GetProperty("supplier").GetString()</td>
+                        <td>
+                            @(tr.TryGetProperty("status", out var st) ? st.GetString() : "?")
+                            @if (tr.TryGetProperty("url", out var u) && u.GetString() is { Length: > 0 } url) { <a class="link" href="@url" target="_blank" rel="noopener noreferrer">bağlantı</a> }
+                            @if (tr.TryGetProperty("note", out var nt) && nt.GetString() is { Length: > 0 } note) { <div class="muted">@note</div> }
+                        </td>
+                        <td>@(tr.TryGetProperty("price_try", out var pr) && pr.ValueKind == JsonValueKind.Number && pr.GetDouble() > 0 ? pr.GetDouble().ToString("0.00") : "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="muted">Fiyatı doğrulanan kalemlerin toplamı ≈ @Result.GetProperty("tr_total_try").GetDouble().ToString("0") TL. Fiyat yalnızca mağaza sayfasından alıntıyla kabul edilir.</p>
+        break;
+
+    case "checks":
+        <dl>
+            <dt>ERC (şema)</dt>
+            <dd class="@(Erc ? "ok" : "bad")">@(Erc ? "geçti" : Result.GetProperty("erc").GetProperty("detail").GetString())</dd>
+            <dt>Yollar</dt>
+            <dd class="@(Result.GetProperty("clean").GetBoolean() ? "ok" : "warn")">@(Result.GetProperty("clean").GetBoolean() ? "KiCad DRC temiz" : "DRC tam temiz değil")</dd>
+            <dt>Yönlendirme</dt>
+            <dd>@Routing</dd>
+            <dt>İkinci okuyucu</dt>
+            <dd>
+                @if (Result.TryGetProperty("crosscheck", out var cc) && cc.TryGetProperty("passed", out var cp))
+                {
+                    <span class="@(cp.ValueKind == JsonValueKind.True ? "ok" : "warn")">@(cp.ValueKind == JsonValueKind.True ? "KiCad ile uyuşuyor" : cp.ValueKind == JsonValueKind.False ? "farklı düşünüyor" : "çalışmadı")</span>
+                    @if (cc.TryGetProperty("issues", out var iss))
+                    {
+                        @foreach (var i in iss.EnumerateArray()) { <div class="muted">@i.GetString()</div> }
+                    }
+                }
+            </dd>
+        </dl>
+        @if (Result.TryGetProperty("rounds", out var rounds) && rounds.ValueKind == JsonValueKind.Array && rounds.GetArrayLength() > 0)
+        {
+            <h2>Yönlendirme turları</h2>
+            <table>
+                <thead><tr><th>Tur</th><th>Çizilen ağ</th><th>Sorunlar</th></tr></thead>
+                <tbody>
+                    @foreach (var rd in rounds.EnumerateArray())
+                    {
+                        <tr>
+                            <td>@rd.GetProperty("round").GetInt32()</td>
+                            <td>@rd.GetProperty("routed").GetInt32()</td>
+                            <td>
+                                @if (rd.GetProperty("problems").GetArrayLength() == 0) { <span class="ok">temiz</span> }
+                                else { @string.Join("; ", rd.GetProperty("problems").EnumerateArray().Select(x => x.GetString())) }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        <h2>Eleştirmen</h2>
+        <p><strong>@Result.GetProperty("review").GetProperty("verdict").GetString()</strong></p>
+        <ul>
+            @foreach (var risk in Result.GetProperty("review").GetProperty("risks").EnumerateArray()) { <li>@risk.GetString()</li> }
+        </ul>
+        <p class="muted">Önce doğrula: @Result.GetProperty("review").GetProperty("verify_first").GetString()</p>
+        break;
+
+    case "files":
+        <p>
+            @foreach (var key in new[] { "board", "schematic", "bom", "board_svg", "schematic_svg" })
+            {
+                @if (Result.GetProperty("urls").TryGetProperty(key, out var file)) { <a class="link" href="@Link(file.GetString()!)" download>@key indir</a> <text> · </text> }
+            }
+        </p>
+        <p class="muted">Sipariş vermek ya da üretmek için önce insan incelemesi şarttır (SPEC 13.2).</p>
+        break;
+}
+
+@code {
+    private static readonly (string, string)[] Tabs =
+        [("board", "Kart"), ("schematic", "Şema"), ("parts", "Parçalar ve pinler"), ("nets", "Ağlar"), ("bom", "Malzeme"), ("checks", "Doğrulama"), ("files", "Dosyalar")];
+
+    [Parameter, EditorRequired] public JsonElement Result { get; set; }
+
+    private string tab = "board";
+
+    private JsonElement Geometry => Result.GetProperty("crosscheck").GetProperty("geometry");
+
+    private bool Erc => Result.GetProperty("erc").GetProperty("passed").GetBoolean();
+
+    private string Routing
+    {
+        get
+        {
+            var r = Result.GetProperty("routing");
+            var unrouted = r.GetProperty("unrouted").EnumerateArray().Select(x => x.GetString()).ToList();
+            return $"{r.GetProperty("routed").GetArrayLength()} ağ çizildi · {r.GetProperty("tracks").GetRawText()} iz · {r.GetProperty("vias").GetRawText()} via · {r.GetProperty("length_mm").GetRawText()} mm bakır"
+                + (unrouted.Count > 0 ? " · çizilemeyen: " + string.Join(", ", unrouted) : "");
+        }
+    }
+
+    private string Link(string url) => $"{url.TrimStart('/')}?access_token={Tokens.Access}";
+
+    private static bool Has(JsonElement e, string a, string b) =>
+        e.TryGetProperty(a, out var x) && x.ValueKind == JsonValueKind.Object && x.TryGetProperty(b, out var y) && y.ValueKind == JsonValueKind.Object;
+
+    private double Size(int i) => Result.GetProperty("size_mm")[i].GetDouble();
+
+    private IEnumerable<JsonElement> PartsOf() => Result.GetProperty("circuit").GetProperty("parts").EnumerateArray();
+
+    private IEnumerable<(string, List<string>)> NetsOf() =>
+        PartsOf().SelectMany(p => p.GetProperty("pins").EnumerateArray().Select(pin => (Net: pin[3].GetString() ?? "", Pin: p.GetProperty("ref").GetString() + "." + pin[0].GetString())))
+            .GroupBy(x => x.Net).OrderBy(g => g.Key).Select(g => (g.Key, g.Select(x => x.Pin).ToList()));
+
+    private string NetState(string net) =>
+        Result.GetProperty("routing").GetProperty("unrouted").EnumerateArray().Any(x => x.GetString() == net) ? "çizilemedi"
+        : Result.GetProperty("routing").GetProperty("routed").EnumerateArray().Any(x => x.GetString() == net) ? "çizildi"
+        : net == "GND" ? "alt katman dökümü" : "tek pin";
+}

@@ -1,0 +1,183 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  quadruped_v2 - NEML_SPEC.md SS13.3 hardware genome.
+    morphology  : quadruped, 4 legs x 4 DOF = 16 DOF
+    actuators   : 16 x sts3215
+    sensors     : bno085 IMU @100 Hz, realsense d405 depth @15 Hz, 2 x ina226
+    limits      : 2.5 Nm, 6.0 rad/s   (genome limits block, closed to evolution)
+
+  Two rules from SS12.2 are enforced structurally here and re-checked by
+  test/test_urdf.py:
+    1. every inertia tensor comes from urdf/inertia.xacro, i.e. from FreeCAD
+       mass properties. Nothing here estimates inertia from a mesh.
+    2. every collision element is a primitive; meshes appear only under visual.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="quadruped_v2">
+
+  <xacro:arg name="use_sim" default="true"/>
+  <!-- Topic prefix the topic_based hardware talks to on real hardware; the
+       STM32 owns the 1 kHz loop and speaks micro-ROS on these topics. -->
+  <xacro:arg name="hw_topic_ns" default="motion"/>
+
+  <xacro:include filename="$(find neml_description)/urdf/inertia.xacro"/>
+  <xacro:include filename="$(find neml_description)/urdf/leg.xacro"/>
+  <xacro:include filename="$(find neml_description)/urdf/quadruped_v2.ros2_control.xacro"/>
+
+  <!-- ===================== geometry (metres) =====================
+       These mirror the genome cad_templates params; the URDF generator
+       rewrites them together with inertia.xacro. Do not drift them apart. -->
+  <xacro:property name="body_len"    value="0.240"/>
+  <xacro:property name="body_wid"    value="0.160"/>
+  <xacro:property name="body_h"      value="0.080"/>
+  <xacro:property name="hip_x"       value="0.100"/>
+  <xacro:property name="hip_y"       value="0.065"/>
+  <xacro:property name="hip_z"       value="0.000"/>
+  <xacro:property name="upper_len"   value="0.120"/>
+  <xacro:property name="lower_len"   value="0.110"/>
+  <xacro:property name="foot_radius" value="0.016"/>
+
+  <!-- ===================== genome limits block =====================
+       SS13.3: L4 cannot change these. The evolution loop must not template
+       over them; a change here is a genome change with a new hash. -->
+  <xacro:property name="joint_effort_nm"     value="2.5"/>
+  <xacro:property name="joint_velocity_rads" value="6.0"/>
+
+  <!-- Calibration knobs (SS11.3 fit targets: joint damping, friction).
+       scripts/calibration/ writes these back after a reality-gap run. -->
+  <xacro:property name="joint_damping"  value="0.020"/>
+  <xacro:property name="joint_friction" value="0.005"/>
+
+  <!-- Joint travel. Mechanical hard stops, not a control policy. -->
+  <xacro:property name="hip_yaw_range"   value="0.70"/>
+  <xacro:property name="hip_pitch_range" value="1.60"/>
+  <xacro:property name="knee_range"      value="2.40"/>
+  <xacro:property name="ankle_range"     value="1.40"/>
+
+  <material name="neml_shell"><color rgba="0.18 0.19 0.21 1.0"/></material>
+  <material name="neml_tpu"><color rgba="0.85 0.35 0.10 1.0"/></material>
+
+  <!-- ============================ body ============================ -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${base_mass}"/>
+      <inertia ixx="${base_ixx}" ixy="${base_ixy}" ixz="${base_ixz}"
+               iyy="${base_iyy}" iyz="${base_iyz}" izz="${base_izz}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://neml_description/meshes/body_shell.stl" scale="1 1 1"/>
+      </geometry>
+      <material name="neml_shell"/>
+    </visual>
+    <collision>
+      <!-- primitive box, deliberately not the shell mesh (SS12.2) -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${body_len} ${body_wid} ${body_h}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ============================ legs ============================
+       prefix: f/r = front/rear, l/r = left/right. -->
+  <xacro:neml_leg prefix="fl" x_sign="1"  y_sign="1"/>
+  <xacro:neml_leg prefix="fr" x_sign="1"  y_sign="-1"/>
+  <xacro:neml_leg prefix="rl" x_sign="-1" y_sign="1"/>
+  <xacro:neml_leg prefix="rr" x_sign="-1" y_sign="-1"/>
+
+  <!-- =========================== bno085 IMU =========================== -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 ${body_h / 2}" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="imu_link">
+    <sensor name="bno085" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <!-- SS11.4 nominal gyro noise sigma 0.01 rad/s; the sim runner
+           randomizes it +-15% from the run seed, never from wall clock. -->
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.01</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.05</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.05</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.05</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- ====================== realsense d405 depth ====================== -->
+  <link name="camera_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.042"/>
+      <inertia ixx="0.0000060" ixy="0.0" ixz="0.0"
+               iyy="0.0000020" iyz="0.0" izz="0.0000060"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.023 0.042 0.023"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${body_len / 2} 0 0.010" rpy="0 0 0"/>
+  </joint>
+  <!-- REP-103 optical frame: z forward, x right, y down -->
+  <link name="camera_depth_optical_frame"/>
+  <joint name="camera_depth_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <gazebo reference="camera_link">
+    <sensor name="d405" type="rgbd_camera">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <topic>d405</topic>
+      <gz_frame_id>camera_depth_optical_frame</gz_frame_id>
+      <camera>
+        <horizontal_fov>1.274</horizontal_fov>
+        <image><width>424</width><height>240</height><format>R8G8B8</format></image>
+        <clip><near>0.07</near><far>3.0</far></clip>
+      </camera>
+    </sensor>
+  </gazebo>
+
+  <!-- ========================= ina226 shunts =========================
+       No mechanical presence: these frames exist so current telemetry has a
+       frame_id and so the rail count matches SS13.3 (count: 2). The hardware
+       overcurrent cut at 20 A is a comparator, not this frame (SS5.1). -->
+  <link name="ina226_5v_link"/>
+  <joint name="ina226_5v_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="ina226_5v_link"/>
+    <origin xyz="-0.060 0.040 0.0" rpy="0 0 0"/>
+  </joint>
+  <link name="ina226_3v3_link"/>
+  <joint name="ina226_3v3_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="ina226_3v3_link"/>
+    <origin xyz="-0.060 -0.040 0.0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ========================= ros2_control ========================= -->
+  <xacro:neml_ros2_control use_sim="$(arg use_sim)" hw_topic_ns="$(arg hw_topic_ns)"/>
+
+</robot>

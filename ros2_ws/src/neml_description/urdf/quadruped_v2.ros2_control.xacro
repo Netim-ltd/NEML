@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  ros2_control hardware description for the 16 sts3215 joints.
+
+  Two hardware backends, selected by the use_sim argument:
+
+    use_sim=true   gz_ros2_control/GazeboSimSystem - Gazebo Harmonic owns the
+                   integration at max_step_size 0.001 (SS11.1).
+
+    use_sim=false  topic_based_ros2_control/TopicBasedSystem - the STM32F446
+                   owns the real 1 kHz loop (SS2) and speaks micro-ROS. The
+                   controller manager therefore does NOT drive servos directly;
+                   it publishes setpoints and consumes the joint state the MCU
+                   publishes back. Torque saturation lives in STM32 firmware as
+                   a compile-time constant (SS5.1 MAX_TORQUE_NM 2.5f); the
+                   limits below are the second, softer line of defence.
+
+  ponytail: no custom hardware_interface plugin. topic_based_ros2_control is an
+  existing ros-controls package and the MCU link is already a topic. Write a
+  real SerialSts3215System only if the micro-ROS hop is measured to cost too
+  much jitter at 1 kHz.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- One joint block. position is the commanded interface, effort is exposed
+       as a second command interface for the effort controllers (SS: T-072
+       torque work); all three states come back from the MCU or from Gazebo. -->
+  <xacro:macro name="neml_joint_iface" params="name">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">-3.14159</param>
+        <param name="max">3.14159</param>
+      </command_interface>
+      <command_interface name="effort">
+        <param name="min">-${joint_effort_nm}</param>
+        <param name="max">${joint_effort_nm}</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="neml_leg_ifaces" params="prefix">
+    <xacro:neml_joint_iface name="${prefix}_hip_yaw"/>
+    <xacro:neml_joint_iface name="${prefix}_hip_pitch"/>
+    <xacro:neml_joint_iface name="${prefix}_knee"/>
+    <xacro:neml_joint_iface name="${prefix}_ankle"/>
+  </xacro:macro>
+
+  <xacro:macro name="neml_ros2_control" params="use_sim hw_topic_ns">
+
+    <ros2_control name="quadruped_v2_system" type="system">
+      <hardware>
+        <xacro:if value="${use_sim}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </xacro:if>
+        <xacro:unless value="${use_sim}">
+          <plugin>topic_based_ros2_control/TopicBasedSystem</plugin>
+          <param name="joint_commands_topic">/${hw_topic_ns}/cmd/joint_commands</param>
+          <param name="joint_states_topic">/${hw_topic_ns}/telemetry/joint_states</param>
+          <param name="sum_wrapped_joint_states">false</param>
+        </xacro:unless>
+      </hardware>
+
+      <xacro:neml_leg_ifaces prefix="fl"/>
+      <xacro:neml_leg_ifaces prefix="fr"/>
+      <xacro:neml_leg_ifaces prefix="rl"/>
+      <xacro:neml_leg_ifaces prefix="rr"/>
+
+      <!-- bno085, surfaced through imu_sensor_broadcaster -->
+      <sensor name="bno085">
+        <state_interface name="orientation.x"/>
+        <state_interface name="orientation.y"/>
+        <state_interface name="orientation.z"/>
+        <state_interface name="orientation.w"/>
+        <state_interface name="angular_velocity.x"/>
+        <state_interface name="angular_velocity.y"/>
+        <state_interface name="angular_velocity.z"/>
+        <state_interface name="linear_acceleration.x"/>
+        <state_interface name="linear_acceleration.y"/>
+        <state_interface name="linear_acceleration.z"/>
+        <param name="frame_id">imu_link</param>
+      </sensor>
+    </ros2_control>
+
+    <xacro:if value="${use_sim}">
+      <gazebo>
+        <plugin filename="gz_ros2_control-system"
+                name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+          <!-- Resolved by the bringup launch; never hardcoded to a path that
+               only exists on one machine. -->
+          <parameters>$(find neml_control)/config/controllers.yaml</parameters>
+        </plugin>
+      </gazebo>
+    </xacro:if>
+
+  </xacro:macro>
+</robot>

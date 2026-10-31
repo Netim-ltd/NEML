@@ -1,0 +1,215 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inject ApiClient Api
+@inject AssistantState State
+@inject NavigationManager Nav
+@using System.Text.Json
+
+<div class="import-panel">
+    <p class="muted">
+        Açık kaynak bir GitHub deposunu <strong>bütün olarak</strong> içe aktar: parçalar (STL, STEP), kartlar (KiCad) ve URDF otomatik alınır, depo yapısı ve README'si
+        okunup modelin yorumuyla kayda geçer. İstersen yalnızca seçtiklerini de alabilirsin. Her şey yeni bir robot çalışma alanına ya da açık modele taslak olarak eklenir;
+        3B'de, Kartlar'da görünür, asistanla devam edersin.
+    </p>
+    <form @onsubmit="ScanAsync" @onsubmit:preventDefault>
+        <input placeholder="github.com/sahip/depo" @bind="repo" @bind:event="oninput" />
+        <button class="primary" type="submit" disabled="@(busy || string.IsNullOrWhiteSpace(repo))">@(scanning ? "Bakıyorum…" : "Dosyaları listele")</button>
+    </form>
+
+    @if (info is { } i)
+    {
+        <h4>@Str(i, "repo") <span class="muted">· dal @Str(i, "branch") · ★@Num(i, "stars")</span></h4>
+        @if (Str(i, "description") is { Length: > 0 } d)
+        {
+            <p class="muted">@d</p>
+        }
+
+        @if (i.TryGetProperty("license", out var lic) && lic.ValueKind == JsonValueKind.Object)
+        {
+            <p><span class="state ok">Lisans: @Str(lic, "spdx")</span> @Str(lic, "name")</p>
+        }
+        else
+        {
+            <p><span class="state warn">Lisans belirtilmemiş</span> Kullanım hakları belirsiz; yazarına sormadan kullanma.</p>
+        }
+
+        @if (i.TryGetProperty("overview", out var ov))
+        {
+            <p class="muted">@Num(ov, "files") dosya, bunlardan @Num(ov, "importable") tanesi içe aktarılabilir türde (STL, STEP, KiCad, URDF).</p>
+        }
+
+        @if (files.Count == 0)
+        {
+            <p class="muted">İçe aktarılabilir parça/kart dosyası yok; yine de depoyu (yapısı, README'si ve modelin yorumuyla) kayda alabilirsin.</p>
+        }
+        else
+        {
+            <p>
+                <button class="ghost" type="button" @onclick="SelectAll">Tümünü seç</button>
+                <button class="ghost" type="button" @onclick="selected.Clear">Seçimi temizle</button>
+                <span class="muted">@selected.Count / @files.Count seçili</span>
+            </p>
+            <div class="import-files">
+                @foreach (var f in files)
+                {
+                    <label class="chip">
+                        <input type="checkbox" disabled="@f.TooBig" checked="@selected.Contains(f.Path)" @onchange="e => Toggle(f.Path, e)" />
+                        <span class="state">@f.Kind</span> @f.Path <span class="muted">(@(f.Size / 1024) KB@(f.TooBig ? ", çok büyük" : ""))</span>
+                    </label>
+                }
+            </div>
+            @if (i.TryGetProperty("truncated", out var tr) && tr.ValueKind == JsonValueKind.True)
+            {
+                <p class="muted">Liste kısaltıldı (çok dosya var).</p>
+            }
+        }
+
+        <p>
+            <label class="chip"><input type="radio" name="target" checked="@(!intoCurrent)" @onchange="() => intoCurrent = false" /> Yeni robot oluştur</label>
+            @if (State.GenomeId is not null)
+            {
+                <label class="chip"><input type="radio" name="target" checked="@intoCurrent" @onchange="() => intoCurrent = true" /> Açık modele ekle (@State.ModelName)</label>
+            }
+        </p>
+        @if (!intoCurrent)
+        {
+            <input placeholder="Yeni robotun adı" maxlength="40" @bind="newName" @bind:event="oninput" />
+        }
+
+
+        <label class="chip"><input type="checkbox" @bind="ack" /> Lisansı gözden geçirdim; bu tasarımı kullanma hakkım var.</label>
+        <p>
+            <button class="primary" disabled="@(busy || Blocker is not null)" @onclick="() => ImportAsync(true)">
+                @(importing ? "İçe aktarılıyor…" : "Tüm repoyu içe aktar")
+            </button>
+            @if (files.Count > 0)
+            {
+                <button class="ghost" disabled="@(busy || Blocker is not null || selected.Count == 0)" @onclick="() => ImportAsync(false)">Yalnızca seçilen @selected.Count dosyayı al</button>
+            }
+        </p>
+        @if (Blocker is { } why && !busy)
+        {
+            <p class="muted">Düğme pasif çünkü: @why</p>
+        }
+    }
+
+    @if (message is not null)
+    {
+        <p class="@(failed ? "error" : null)">@message</p>
+    }
+
+    @if (draftId is not null)
+    {
+        <p>
+            <button class="ghost" @onclick="OpenModel">Modeli aç</button>
+            <button class="primary" disabled="@applied" @onclick="ApplyAsync">@(applied ? "Onay istendi" : "Uygula (onay iste)")</button>
+        </p>
+    }
+</div>
+
+@code {
+    private sealed record FileRow(string Path, string Kind, long Size, bool TooBig);
+
+    private string repo = "", newName = "";
+    private bool scanning, importing, ack, intoCurrent, failed, applied;
+    private bool busy => scanning || importing;
+    private JsonElement? info;
+    private List<FileRow> files = [];
+    private readonly HashSet<string> selected = [];
+    private string? message, draftId, draftModel;
+
+    /// <summary>Why the import buttons are off, in words (a silently disabled button looked like "not allowed").</summary>
+    private string? Blocker =>
+        !ack ? "lisansı gözden geçirdiğini işaretlemelisin."
+        : !intoCurrent && string.IsNullOrWhiteSpace(newName) ? "yeni robota bir ad yazmalısın (ya da açık modele ekle)."
+        : null;
+
+    private void SelectAll()
+    {
+        foreach (var f in files.Where(f => !f.TooBig)) { selected.Add(f.Path); }
+    }
+
+    private static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static long Num(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : 0;
+
+    private void Toggle(string path, ChangeEventArgs e)
+    {
+        if (e.Value is true) { selected.Add(path); } else { selected.Remove(path); }
+    }
+
+    private async Task<(bool Ok, JsonElement? Result, string? Error)> WaitAsync(Guid id)
+    {
+        for (var i = 0; i < 300; i++)
+        {
+            await Task.Delay(2000);
+            var status = await Api.GetCommandAsync(id);
+            if (status is null || status.State is "pending" or "delivered") { continue; }
+            if (status.State == "applied") { return (true, status.Result, null); }
+            var why = status.Result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("error", out var e) ? e.GetString() : status.State;
+            return (false, null, why);
+        }
+
+        return (false, null, "Lab 10 dakikada cevap vermedi.");
+    }
+
+    private async Task ScanAsync()
+    {
+        scanning = true; failed = false; message = null; info = null; files = []; selected.Clear(); draftId = null;
+        try
+        {
+            var accepted = await Api.ScanGithubAsync(repo.Trim());
+            var (ok, result, error) = await WaitAsync(accepted!.CommandId);
+            if (!ok) { failed = true; message = error; return; }
+            info = result;
+            files = [.. result!.Value.GetProperty("files").EnumerateArray().Select(f =>
+                new FileRow(f.GetProperty("path").GetString()!, f.GetProperty("kind").GetString()!, f.GetProperty("size").GetInt64(), f.GetProperty("too_big").GetBoolean()))];
+            SelectAll(); // everything is chosen from the start; take away what you do not want
+            newName = string.IsNullOrWhiteSpace(newName) ? Str(result.Value, "repo").Split('/').Last() : newName;
+        }
+        catch (HttpRequestException ex)
+        {
+            failed = true;
+            message = ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests ? "Çok hızlı denedin; bir dakika bekle." : "İstek gönderilemedi.";
+        }
+        finally { scanning = false; }
+    }
+
+    private async Task ImportAsync(bool whole)
+    {
+        importing = true; failed = false; message = "İçe aktarılıyor: dosyalar indiriliyor, dönüştürülüyor, kartlar kontrol ediliyor, depo okunuyor (birkaç dakika sürebilir)…";
+        try
+        {
+            var accepted = await Api.ImportGithubAsync(Str(info!.Value, "repo"), Str(info.Value, "branch"), whole ? [] : selected, ack,
+                intoCurrent ? State.GenomeId : null, intoCurrent ? null : newName, whole);
+            var (ok, result, error) = await WaitAsync(accepted!.CommandId);
+            if (!ok) { failed = true; message = "Olmadı: " + error; return; }
+            message = Str(result!.Value, "reply");
+            var draft = result.Value.GetProperty("draft");
+            draftId = draft.GetProperty("id").GetString();
+            draftModel = draft.GetProperty("model").GetString();
+        }
+        catch (HttpRequestException)
+        {
+            failed = true;
+            message = "İstek gönderilemedi.";
+        }
+        finally { importing = false; }
+    }
+
+    private void OpenModel() => Nav.NavigateTo($"evrim/{Uri.EscapeDataString(draftModel!)}?view={Uri.EscapeDataString(draftId!)}");
+
+    private async Task ApplyAsync()
+    {
+        try
+        {
+            (await Api.ApplyModelAsync(draftId!)).EnsureSuccessStatusCode();
+            applied = true;
+            message += " Onay istedim: Onaylar ekranında seviye 4 onayını ver, tasarım aktif olur.";
+        }
+        catch (HttpRequestException)
+        {
+            message += " (Onay istenemedi.)";
+        }
+    }
+}

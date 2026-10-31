@@ -1,0 +1,427 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/ogrenme"
+@inject ApiClient Api
+@using System.Text.Json
+
+<PageTitle>Öğrenme — NEML</PageTitle>
+<PageHeader Title="Öğrenme" Help="Lab gördüğü sorunlardan ders çıkarır, robotları ve parçaları kendisi tasarlar, kendi başarısını ölçer. Hiçbir öneri tasarımı kendiliğinden değiştirmez; ders ancak sen kabul edince kayda geçer.">
+    <Actions><button class="ghost" type="button" disabled="@busy" aria-busy="@busy" @onclick="LoadAsync">Yenile</button></Actions>
+</PageHeader>
+
+<div aria-live="polite">
+    @if (message is not null)
+    {
+        <Notice Kind="info">@message</Notice>
+    }
+</div>
+
+@if (state is { } sm)
+{
+    <div class="kpis">
+        <div class="kpi"><div class="value">@sm.GetProperty("waiting_events").GetInt32()</div><div class="label">Öneri bekleyen sorun</div></div>
+        <div class="kpi"><div class="value">@(sm.TryGetProperty("designs", out var dz) && dz.ValueKind == JsonValueKind.Array ? dz.GetArrayLength() : 0)</div><div class="label">Son tasarımlar</div></div>
+        <div class="kpi"><div class="value">@(sm.GetProperty("lessons").EnumerateArray().Count(l => l.GetProperty("status").GetString() == "proposed"))</div><div class="label">Kararını bekleyen ders</div></div>
+    </div>
+    <nav class="actions" aria-label="Bu sayfadaki bölümler" style="margin-bottom:var(--space-4)">
+        <a class="btn" href="#otopilot">Otopilot</a>
+        <a class="btn" href="#notlar">Notlar</a>
+        <a class="btn" href="#oneriler">Dersler</a>
+        <a class="btn" href="#tasarimlar">Tasarımlar</a>
+        <a class="btn" href="#olcum">Ölçüm</a>
+        <a class="btn" href="#veri">Ders kalitesi</a>
+        <a class="btn" href="#toplantilar">Ajan toplantıları</a>
+    </nav>
+}
+
+@if (state is { } s)
+{
+    <section class="card" id="alanlar" aria-labelledby="alanlar-t">
+        <h3 id="alanlar-t">Alanlar</h3>
+        <table>
+            <thead><tr><th>Alan</th><th>Görülen sorun</th><th>Kabul edilen ders</th></tr></thead>
+            <tbody>
+                @foreach (var d in s.GetProperty("domains").EnumerateObject())
+                {
+                    var accepted = d.Value.GetProperty("accepted").GetInt32();
+                    <tr>
+                        <td>@d.Value.GetProperty("label").GetString()</td>
+                        <td>@d.Value.GetProperty("events").GetInt32()</td>
+                        <td>@accepted</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="muted">Bekleyen (henüz öneri üretilmemiş) sorun: @s.GetProperty("waiting_events").GetInt32().</p>
+    </section>
+
+    <section class="card" id="olcum" aria-labelledby="olcum-t">
+        <h3 id="olcum-t">Parça tasarım ölçümü: model CSG tarifi yazabiliyor mu?</h3>
+        <p class="muted">9 basit parça (blok, flanş, L braket, kademeli mil, kutu, çatal braket, kanatçıklı silindir, yuvarlak köşeli plaka, merdiven); hacimleri elle hesaplı. Model ya da istem değişince çalıştırıp daha iyi mi kötü mü olduğuna bak. Tarif geçerli, tek katı, hacim ve ölçü %6 içinde ise geçer.</p>
+        <p><button class="ghost" disabled="@busy" @onclick="BenchAsync">Ölçümü başlat</button>
+            <button class="ghost" disabled="@busy" @onclick="EvolveAsync">Kural evrimi (bir tur)</button></p>
+        @if (s.TryGetProperty("evolve", out var ev) && ev.ValueKind == JsonValueKind.Object && ev.TryGetProperty("rules", out var er))
+        {
+            <p class="muted">Lab tarif isteme kurallarını kendisi geliştirir: ölçümde başarısız parçalara bakıp yeni bir kural önerir, ölçümü onunla tekrar koşar; yalnızca daha çok parça geçerse tutar. En iyi: @ev.GetProperty("best").GetInt32() geçen.</p>
+            @foreach (var rule in er.EnumerateArray())
+            {
+                <p>✓ @rule.GetString()</p>
+            }
+            @if (ev.TryGetProperty("history", out var eh))
+            {
+                @foreach (var h in eh.EnumerateArray().Reverse().Take(5))
+                {
+                    <p class="muted">@(h.GetProperty("kept").GetBoolean() ? "tutuldu" : "atıldı"): @h.GetProperty("rule").GetString() (@h.GetProperty("before").GetInt32() → @h.GetProperty("passed").GetInt32())</p>
+                }
+            }
+        }
+        @if (s.TryGetProperty("bench", out var bn) && bn.ValueKind == JsonValueKind.Object && bn.TryGetProperty("cases", out var bc))
+        {
+            <p>@bn.GetProperty("state").GetString() · geçen: @bc.EnumerateArray().Count(x => x.GetProperty("passed").GetBoolean()) / @bn.GetProperty("total").GetInt32()</p>
+            <table>
+                <thead><tr><th>Parça</th><th>Sonuç</th><th>Hacim hatası</th><th>Ölçü hatası</th><th>Süre</th></tr></thead>
+                <tbody>
+                    @foreach (var c in bc.EnumerateArray())
+                    {
+                        <tr>
+                            <td>@c.GetProperty("id").GetString()</td>
+                            <td>@(c.GetProperty("passed").GetBoolean() ? "geçti" : c.TryGetProperty("error", out var be) ? be.GetString() : "kaldı")</td>
+                            <td>@(c.TryGetProperty("volume_err", out var ve) ? $"%{ve.GetDouble() * 100:0.0}" : "-")</td>
+                            <td>@(c.TryGetProperty("box_err", out var xe) ? $"%{xe.GetDouble() * 100:0.0}" : "-")</td>
+                            <td>@c.GetProperty("seconds").GetInt32() sn</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="card" id="tasarimlar" aria-labelledby="tasarimlar-t">
+        <h3 id="tasarimlar-t">Tasarımlar: lab robotları kendisi tasarlar</h3>
+        <p class="muted">Parametrik şablon yok: model önce parça ağacını planlar, her parçayı FreeCAD'e (CAD MCP) bir CSG tarifiyle yaptırır, hatalı tarifi düzeltir, URDF ile birleştirir ve denetler. Denetimi geçen tasarım simülasyon tasarımı olarak kendiliğinden devreye girer; üretim ve fiziksel robot yine senin onayında. Lab boştayken kendi fikrini de üretir (günde en çok bir).</p>
+        <form @onsubmit="DesignAsync" @onsubmit:preventDefault>
+            <input @bind="brief" placeholder="Ne tasarlansın? Örn. hobi bahçesinde dolaşan küçük gezgin robot" style="width:100%" />
+            <button class="primary" type="submit" disabled="@busy">Tasarla</button>
+        </form>
+        @if (s.TryGetProperty("designs", out var ds) && ds.ValueKind == JsonValueKind.Array)
+        {
+            @foreach (var d in ds.EnumerateArray().Reverse())
+            {
+                <article class="card">
+                    <header><strong>@d.GetProperty("brief").GetString()</strong> <span class="state">@d.GetProperty("state").GetString()</span> <span class="muted">@d.GetProperty("actor").GetString()</span></header>
+                    <p class="muted">@string.Join(" → ", d.GetProperty("steps").EnumerateArray().TakeLast(6).Select(x => x.GetString()))</p>
+                    @if (d.TryGetProperty("result", out var dr) && dr.ValueKind == JsonValueKind.Object)
+                    {
+                        <p>Model: <a class="link" href="@($"evrim/{dr.GetProperty("model").GetString()}")">@dr.GetProperty("model").GetString()</a> · @(dr.GetProperty("activated").GetBoolean() ? "devreye alındı (simülasyon)" : "taslak") @string.Join("; ", dr.GetProperty("problems").EnumerateArray().Select(x => x.GetString()))</p>
+                    }
+                    @if (d.TryGetProperty("result", out var dp) && dp.ValueKind == JsonValueKind.Object && dp.TryGetProperty("pack", out var pk) && pk.ValueKind == JsonValueKind.Object)
+                    {
+                        <details><summary>Yapım paketi: @(pk.GetProperty("ready").GetBoolean() ? "hazır (sipariş ve baskı onayı sende)" : "engelleri var")</summary><pre style="white-space:pre-wrap">@pk.GetProperty("markdown").GetString()</pre></details>
+                    }
+                    @if (d.TryGetProperty("error", out var de)) { <p class="error">@de.GetString()</p> }
+                </article>
+            }
+        }
+    </section>
+
+    <section class="card" id="veri" aria-labelledby="veri-t">
+        <h3 id="veri-t">Veri ajanı: ders kalitesi</h3>
+        <p class="muted">Sert hakemlerin bulgularını (iç içe parça, zayıf servo, eksik batarya, devrilme) ilgili çözümle etiketleyip toplar; kopya, çelişkili, geçersiz ve şüpheli satırları eler (senin kararlarına dokunmaz, yalnızca işaretler); her alan için temiz satır sayısını ve çözüm dağılımını gösterir.</p>
+        @if (s.TryGetProperty("steward", out var sw) && sw.ValueKind == JsonValueKind.Object && sw.TryGetProperty("domains", out var sd) && sd.ValueKind == JsonValueKind.Object)
+        {
+            <table>
+                <thead><tr><th>Alan</th><th>Temiz satır</th><th>Not</th><th>Çözümsüz kalan</th></tr></thead>
+                <tbody>
+                @foreach (var d in sd.EnumerateObject())
+                {
+                    <tr>
+                        <td>@d.Name</td>
+                        <td>@d.Value.GetProperty("clean").GetInt32()</td>
+                        <td>@string.Join("; ", d.Value.GetProperty("notes").EnumerateArray().Select(x => x.GetString()))</td>
+                        <td>@string.Join(", ", d.Value.GetProperty("missing_remedies").EnumerateArray().Select(x => x.GetString()))</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="muted">Henüz bir tur çalışmadı (30 dakikada bir çalışır).</p>
+        }
+    </section>
+
+    <section class="card" id="toplantilar" aria-labelledby="toplantilar-t">
+        <h3 id="toplantilar-t">Ajan toplantıları: her modelden sonra</h3>
+        <p class="muted">Mekanik, elektronik, yapısal, simülasyon, üretim ve eleştirmen ajanları tasarımı iki turda tartışır; moderatör eksikleri, nasıl çalışması gerektiğini, adımları ve araştırılacak konuları çıkarır. Adımlar ders olarak kaydedilir (üç uzman aynı şeyi söylerse kabul edilir); konular internetten okunup RAG notlarına eklenir; eksikler lab'ın bir sonraki tasarımının talebine yazılır.</p>
+        @if (s.TryGetProperty("reviews", out var rv) && rv.ValueKind == JsonValueKind.Object)
+        {
+            @foreach (var m in rv.EnumerateObject())
+            {
+                <article class="card">
+                    <header><strong>@m.Name</strong> <span class="state">@m.Value.GetProperty("verdict").GetString()</span></header>
+                    <p>@m.Value.GetProperty("summary").GetString()</p>
+                    <p><strong>Nasıl çalışmalı:</strong> @m.Value.GetProperty("how_it_should_work").GetString()</p>
+                    <p><strong>Eksikler:</strong> @string.Join("; ", m.Value.GetProperty("missing").EnumerateArray().Select(x => x.GetString()))</p>
+                    <p><strong>Adımlar:</strong> @string.Join("; ", m.Value.GetProperty("actions").EnumerateArray().Select(x => x.GetProperty("kind").GetString() + "(" + x.GetProperty("argument").GetString() + ")"))</p>
+                    <p class="muted"><strong>Araştırılan:</strong> @string.Join(", ", m.Value.GetProperty("research_topics").EnumerateArray().Select(x => x.GetString()))</p>
+                    <details open="@(m.Name == lastReview)"><summary>Toplantı yazışması (@Chat(m.Value).Count mesaj)</summary>
+                        <GroupChat Lines="Chat(m.Value)" />
+                    </details>
+                </article>
+            }
+        }
+        @if (s.TryGetProperty("daily", out var dy) && dy.ValueKind == JsonValueKind.Object)
+        {
+            <h4>Günlük özet</h4>
+            <table>
+                <thead><tr><th>Gün</th><th>Olay</th><th>Yeni ders</th><th>Kabul</th><th>Not (RAG)</th><th>Tasarım</th><th>Toplantı</th></tr></thead>
+                <tbody>
+                    @foreach (var d in dy.EnumerateObject().Reverse().Take(7))
+                    {
+                        <tr><td>@d.Name</td><td>@d.Value.GetProperty("events").GetInt32()</td><td>@d.Value.GetProperty("lessons_new").GetInt32()</td><td>@d.Value.GetProperty("lessons_accepted").GetInt32()</td><td>@d.Value.GetProperty("notes").GetInt32()</td><td>@d.Value.GetProperty("designs").GetInt32()</td><td>@d.Value.GetProperty("reviews").GetInt32()</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section class="card" id="ortamlar" aria-labelledby="ortamlar-t">
+        <h3 id="ortamlar-t">Ortamlar (dünyalar) ve analizciler</h3>
+        <p class="muted">Lab, robot bir dünyayı üç kez geçince daha zor yenisini kendisi tasarlar; her dünya yayına girmeden önce fizik sözleşmesi, başlangıç boşluğu ve hedefe yürünebilir yol için denetlenir.
+            @foreach (var t in new[] { "hobby_garden", "warehouse", "stair_hall" })
+            {
+                <button class="ghost" disabled="@busy" @onclick="() => MakeWorldAsync(t)">+ @t (zorluk 2)</button>
+            }
+        </p>
+        @if (s.TryGetProperty("worlds", out var wl) && wl.ValueKind == JsonValueKind.Object)
+        {
+            <p>Üretilen dünyalar: @string.Join(", ", wl.EnumerateObject().Select(w => w.Name))</p>
+        }
+        @if (s.TryGetProperty("audit", out var au) && au.ValueKind == JsonValueKind.Object)
+        {
+            @foreach (var m in au.EnumerateObject())
+            {
+                <h4>@m.Name: yapısal analiz</h4>
+                <p><span class="state">@m.Value.GetProperty("review_structure").GetProperty("verdict").GetString()</span> @m.Value.GetProperty("review_structure").GetProperty("verify_first").GetString()</p>
+                <ul>
+                    @foreach (var f in m.Value.GetProperty("structure").EnumerateArray())
+                    {
+                        <li>@f.GetProperty("text").GetString()</li>
+                    }
+                </ul>
+            }
+        }
+    </section>
+
+    <section class="card" id="radar" aria-labelledby="radar-t">
+        <h3 id="radar-t">Radar: internet taraması</h3>
+        <p class="muted">Makale, forum, haber ve firma blogu beslemeleri (herkese açık RSS) sırayla taranır; sayfalardan alıntıya dayalı tasarım notları çıkarılır ve model sohbetinde kullanılır. Giriş gerektiren sosyal ağlar (X, Instagram, LinkedIn) taranmaz.
+            Toplam not: @(s.GetProperty("radar").TryGetProperty("notes", out var nn) ? nn.GetInt32() : 0). Simülasyon taraması (Gazebo, saatte bir koşu): @SweepText(s)</p>
+        @if (s.GetProperty("radar").TryGetProperty("log", out var rlog) && rlog.ValueKind == JsonValueKind.Array)
+        {
+            <ul>
+                @foreach (var r in rlog.EnumerateArray().Take(12))
+                {
+                    <li><a class="link" href="@r.GetProperty("link").GetString()" target="_blank" rel="noopener noreferrer">@r.GetProperty("title").GetString()</a> <span class="muted">· @r.GetProperty("feed").GetString() · @r.GetProperty("notes").GetInt32() not</span></li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card" id="otopilot" aria-labelledby="otopilot-t">
+        <h3 id="otopilot-t">Otopilot: lab kendi kararlarını verir</h3>
+        <p class="muted">Senden onay beklenmez. Öneri dersleri sabit kurallar ve modelin ikinci görüşüyle otomatik kabul ya da reddedilir (20 dakikada bir); internet taraması 15 dakikada bir, kural evrimi 6 saatte bir, veri temizliği 30 dakikada bir, kendi tasarım girişimi 4 saatte bir çalışır. Fiziksel işlemler (baskı, sipariş, robot hareketi) yine onay ister.</p>
+        @if (s.TryGetProperty("autopilot", out var ap) && ap.ValueKind == JsonValueKind.Object && ap.TryGetProperty("total", out var apt) && apt.ValueKind == JsonValueKind.Object)
+        {
+            <p><span class="pill ok">@apt.GetProperty("accepted").GetInt32() ders kabul edildi</span> <span class="pill warn">@apt.GetProperty("rejected").GetInt32() ders reddedildi</span></p>
+        }
+        else
+        {
+            <p class="muted">İlk otomatik karar turu henüz çalışmadı; en geç 20 dakika içinde başlar.</p>
+        }
+        <p class="muted">Her dersin altında kararın gerekçesi yazılıdır; katılmadığın bir kararı Öneriler bölümünden değiştirebilirsin.</p>
+    </section>
+
+    <section class="card" id="notlar" aria-labelledby="notlar-t">
+        <h3 id="notlar-t">Araştırma notları</h3>
+        <p class="muted">Radar internette taradığı yazılardan çıkardığı tasarım kurallarını burada biriktirir. "Doğrulandı" notlar kural ölçümünde işe yaradığı görülenlerdir, "reddedildi" olanlar bir daha gösterilmez, "denenmedi" olanlar sırasını bekler.</p>
+        @if (s.TryGetProperty("notes", out var nts) && nts.ValueKind == JsonValueKind.Array && nts.GetArrayLength() > 0)
+        {
+            <div class="table-wrap">
+                <table>
+                    <caption class="visually-hidden">Son araştırma notları</caption>
+                    <thead><tr><th scope="col">Alan</th><th scope="col">Not</th><th scope="col">Durum</th><th scope="col">Kaynak</th></tr></thead>
+                    <tbody>
+                    @foreach (var n in nts.EnumerateArray().Reverse())
+                    {
+                        <tr>
+                            <td>@(n.GetProperty("area").GetString())</td>
+                            <td><strong>@n.GetProperty("title").GetString()</strong><br /><span class="muted">@n.GetProperty("rule").GetString()</span></td>
+                            <td><span class="pill @(n.GetProperty("status").GetString() == "verified" ? "ok" : n.GetProperty("status").GetString() == "rejected" ? "bad" : "warn")">@NoteStatus(n.GetProperty("status").GetString())</span></td>
+                            <td class="muted">@Host(n.GetProperty("source").GetString())</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <p class="muted">Son 40 not gösteriliyor.</p>
+        }
+        else
+        {
+            <EmptyState Title="Henüz not yok" Hint="Radar ilk yazıyı okuduğunda notlar burada görünür." Icon="learn" />
+        }
+    </section>
+
+    <section class="card" id="lora" aria-labelledby="lora-t">
+        <h3 id="lora-t">Ana modelin ince ayarı (LoRA)</h3>
+        @if (s.TryGetProperty("lora", out var lr) && lr.ValueKind == JsonValueKind.Object && lr.TryGetProperty("rows", out var lrows))
+        {
+            <p><span class="pill ok">@lrows.GetInt32() eğitim satırı hazır</span> (kabul edilen dersler ve doğrulanmış parça tarifleri, her gün yenilenir)</p>
+            <Notice Kind="warn">@lr.GetProperty("training").GetString()</Notice>
+        }
+        else
+        {
+            <p class="muted">Eğitim dosyası ilk gece turunda hazırlanır.</p>
+        }
+        <p class="muted">Ana model (Qwen3-Next-80B) CPU'da arka planda ince ayar yapılamayacak kadar büyük. Dosya hazır tutulur; bir GPU makinesi bağlandığında eğitim onu okuyup çalışır.</p>
+    </section>
+
+    <section class="card" id="oneriler" aria-labelledby="oneriler-t">
+        <h3 id="oneriler-t">Öneriler</h3>
+        @if (s.GetProperty("lessons").GetArrayLength() == 0)
+        {
+            <p class="muted">Henüz öneri yok. Bir simülasyon başarısız olunca, çarpışma/denge sorunu görülünce ya da bir içe aktarma hata verince burada belirir.</p>
+        }
+        @foreach (var l in s.GetProperty("lessons").EnumerateArray())
+        {
+            var id = l.GetProperty("id").GetString()!;
+            var status = l.GetProperty("status").GetString();
+            <article class="card">
+                <header><strong>@l.GetProperty("situation").GetString()</strong> <span class="state">@status</span> <span class="muted">@l.GetProperty("domain").GetString() · @l.GetProperty("source").GetString()</span></header>
+                <p>@l.GetProperty("cause").GetString()</p>
+                <p><code>@CallText(l)</code></p>
+                @if (status == "proposed")
+                {
+                    <button class="primary" disabled="@busy" @onclick='() => DecideAsync(id, "accepted")'>Kabul et</button>
+                    <button class="ghost" disabled="@busy" @onclick='() => DecideAsync(id, "rejected")'>Reddet</button>
+                }
+            </article>
+        }
+    </section>
+}
+
+@code {
+    private static string NoteStatus(string? s) => s switch { "verified" => "doğrulandı", "rejected" => "reddedildi", _ => "denenmedi" };
+
+    private static string Host(string? url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : (url ?? "");
+
+    private string? lastReview => state is { } st && st.TryGetProperty("reviews", out var rv) && rv.ValueKind == JsonValueKind.Object
+        ? rv.EnumerateObject().OrderByDescending(r => r.Value.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Number ? at.GetDouble() : 0).Select(r => r.Name).FirstOrDefault()
+        : null;
+
+    private static readonly string[] Rounds = ["", "1. tur: herkes tasarımı kendi uzmanlığından değerlendiriyor", "2. tur: birbirlerine cevap veriyorlar", "Moderatörün sonucu"];
+
+    /// <summary>A review as chat lines; older reviews without a transcript show their last words.</summary>
+    private static List<GroupChat.ChatLine> Chat(JsonElement review)
+    {
+        var lines = new List<GroupChat.ChatLine>();
+        if (review.TryGetProperty("chat", out var chat) && chat.ValueKind == JsonValueKind.Array)
+        {
+            var round = 0;
+            foreach (var c in chat.EnumerateArray())
+            {
+                var r = c.GetProperty("round").GetInt32();
+                lines.Add(new(c.GetProperty("role").GetString() ?? "?", c.GetProperty("text").GetString() ?? "", r != round ? Rounds[Math.Clamp(r, 0, 3)] : null));
+                round = r;
+            }
+        }
+        else if (review.TryGetProperty("talk", out var talk) && talk.ValueKind == JsonValueKind.Object)
+        {
+            lines.AddRange(talk.EnumerateObject().Select(t => new GroupChat.ChatLine(t.Name, t.Value.GetString() ?? "")));
+        }
+
+        return lines;
+    }
+
+    private JsonElement? state;
+    private bool busy;
+    private string? message;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private static string SweepText(JsonElement s) =>
+        s.TryGetProperty("sweeps", out var w) && w.ValueKind == JsonValueKind.Object && w.TryGetProperty("runs", out var n)
+            ? $"{n.GetInt32()} koşu, son: {w.GetProperty("last_world").GetString()} → {w.GetProperty("last_outcome").GetString()}"
+            : "henüz koşu yok";
+
+    private static string CallText(JsonElement l) =>
+        l.GetProperty("call").GetProperty("name").GetString() + "(" + l.GetProperty("call").GetProperty("arguments").GetRawText() + ")";
+
+    private async Task<JsonElement?> RunAsync(object body, int tries = 40)
+    {
+        busy = true;
+        try
+        {
+            var accepted = await Api.LearnOpAsync(body);
+            for (var i = 0; i < tries; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r) { return r; }
+                message = status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() : "Olmadı.";
+                return null;
+            }
+
+            message = "Lab cevap vermedi.";
+        }
+        catch (HttpRequestException)
+        {
+            message = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        return null;
+    }
+
+    private async Task LoadAsync()
+    {
+        message = null;
+        if (await RunAsync(new { op = "state" }) is { } r) { state = r; }
+    }
+
+    private async Task DecideAsync(string id, string decision)
+    {
+        if (await RunAsync(new { op = "decide", id, decision }) is not null) { await LoadAsync(); }
+    }
+
+    private string brief = "";
+
+    private async Task DesignAsync()
+    {
+        if (string.IsNullOrWhiteSpace(brief)) { return; }
+        if (await RunAsync(new { op = "design", brief }) is not null) { message = "Tasarım başladı; ilerleme bu bölümde görünür (Yenile)."; brief = ""; await LoadAsync(); }
+    }
+
+    private async Task MakeWorldAsync(string template)
+    {
+        if (await RunAsync(new { op = "world", template, difficulty = 2 }) is { } r)
+        {
+            message = r.TryGetProperty("ok", out var ok) && ok.GetBoolean() ? "Dünya hazır: " + r.GetProperty("name").GetString() : "Dünya reddedildi (denetim geçmedi).";
+            await LoadAsync();
+        }
+    }
+
+    private async Task EvolveAsync()
+    {
+        if (await RunAsync(new { op = "evolve" }) is not null) { message = "Kural evrimi başladı (iki ölçüm koşar, bir saat sürebilir)."; }
+    }
+
+    private async Task BenchAsync()
+    {
+        if (await RunAsync(new { op = "bench" }) is not null) { message = "Ölçüm başladı (CPU'da 10-30 dk); 'Yenile' ile ilerlemeyi gör."; }
+    }
+}

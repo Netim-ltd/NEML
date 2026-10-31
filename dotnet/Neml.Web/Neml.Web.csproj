@@ -1,0 +1,13 @@
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.10" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.10" />
+  </ItemGroup>
+
+</Project>

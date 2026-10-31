@@ -1,0 +1,46 @@
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <!--
+      Microsoft.NET.Test.Sdk otherwise pins testhost to the exact runtime patch bundled with
+      the installed SDK, so the suite refuses to start on any machine that has not also
+      installed that patch. TargetLatestRuntimePatch=false asks for 9.0.0 instead, but on its
+      own it only buys a forward roll inside Microsoft.NETCore.App: when the installed
+      Microsoft.AspNetCore.App patch is ahead of every installed Microsoft.NETCore.App patch,
+      that shared framework pulls in a runtime version that is not there and the host aborts
+      before a single test runs. RollForward=LatestMajor is what actually lets the suite start
+      on whatever runtime the machine has.
+    -->
+    <TargetLatestRuntimePatch>false</TargetLatestRuntimePatch>
+    <RollForward>LatestMajor</RollForward>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)neml.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.10" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Neml.Api\Neml.Api.csproj" />
+    <ProjectReference Include="..\Neml.Cli\Neml.Cli.csproj" />
+    <ProjectReference Include="..\Neml.Domain\Neml.Domain.csproj" />
+    <ProjectReference Include="..\Neml.Infrastructure\Neml.Infrastructure.csproj" />
+    <ProjectReference Include="..\Neml.Web\Neml.Web.csproj" />
+  </ItemGroup>
+
+</Project>

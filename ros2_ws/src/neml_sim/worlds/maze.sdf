@@ -1,0 +1,257 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  maze - a bounded corridor maze for navigation regression runs.
+
+  NEML_SPEC.md SS11.1 physics contract, identical in all five worlds:
+    engine            DART
+    max_step_size     0.001 s
+    real_time_factor  0  (run as fast as the machine allows)
+
+  SS11.2 determinism: nothing here fetches a model from Fuel and nothing here
+  is randomised at load time. The geometry is baked in, so the world file
+  sha256 that goes into `sim_version` actually describes what was simulated.
+
+  Surface friction is the SS11.4 nominal 0.7; the run harness randomises it
+  +-15% from the run seed, it is never edited in this file.
+-->
+<sdf version="1.10">
+  <world name="maze">
+
+    <physics name="dart_1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+      <engine><filename>gz-physics-dartsim-plugin</filename></engine>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="NemlSystem" name="neml::NemlSystem"/>
+    <!-- T-034: config/gz_bridge.yaml maps /world/<world>/model/<ns>/joint_state
+         to /<ns>/telemetry/joint_states. Without this system that topic has no
+         publisher and the encoder half of the bridge carries nothing. -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher"/>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material>
+            <ambient>0.3 0.3 0.3 1</ambient>
+            <diffuse>0.45 0.45 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Corridor maze, 0.8 m clear width, walls 0.4 m tall so the d405 sees
+         them from the standing height of quadruped_v2. -->
+    <model name="outer_s">
+      <static>true</static>
+      <pose>3.000 -2.000 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>6.000 0.100 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>6.000 0.100 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="outer_n">
+      <static>true</static>
+      <pose>3.000 2.000 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>6.000 0.100 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>6.000 0.100 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="outer_w">
+      <static>true</static>
+      <pose>0.000 0.000 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.100 4.000 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.100 4.000 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="outer_e">
+      <static>true</static>
+      <pose>6.000 0.000 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.100 4.000 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.100 4.000 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="inner_1">
+      <static>true</static>
+      <pose>1.500 0.600 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="inner_2">
+      <static>true</static>
+      <pose>3.000 -0.600 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="inner_3">
+      <static>true</static>
+      <pose>4.500 0.600 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.100 2.800 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="inner_4">
+      <static>true</static>
+      <pose>2.250 1.400 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.500 0.100 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.500 0.100 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="inner_5">
+      <static>true</static>
+      <pose>3.750 -1.400 0.200 0 0.00000 0.00000</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.500 0.100 0.400</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.7</mu><mu2>0.7</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.500 0.100 0.400</size></box></geometry>
+          <material>
+            <ambient>0.30 0.32 0.38 1</ambient>
+            <diffuse>0.30 0.32 0.38 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

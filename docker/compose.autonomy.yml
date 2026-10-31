@@ -1,0 +1,28 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# The 24/7 autonomy loop (SPEC 14.1) as its own container, next to the brain.
+#
+#   docker compose -f docker/compose.control.yml -f docker/compose.autonomy.yml \
+#       --profile autonomy up -d autonomy
+#
+# Off by default twice over: the profile keeps it out of a plain `up`, and the
+# process idles until NEML_AUTONOMY_ENABLED=true. It only simulates (ADR-014).
+name: neml-control
+
+services:
+  autonomy:
+    extends:
+      file: compose.control.yml
+      service: brain
+    profiles: [autonomy]
+    command: [python, -m, neml_brain.autonomy]
+    ports: !reset []
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    environment:
+      NEML_AUTONOMY_ENABLED: ${NEML_AUTONOMY_ENABLED:-false}
+      NEML_AUTONOMY_MODE: sim_only
+    healthcheck:
+      disable: true
+    cpus: 0.5
+    mem_limit: 512m

@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Install on a separately sized GPU worker with a matching CUDA PyTorch build.
+accelerate>=1.0,<2
+bitsandbytes>=0.46,<1
+fastapi>=0.115,<1
+peft>=0.17,<1
+safetensors>=0.5,<1
+transformers>=4.56,<5
+uvicorn>=0.30,<1

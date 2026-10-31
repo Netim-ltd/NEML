@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §4.5 — default simulation profile. ~95% of the evolution
+# loop runs here.
+
+profile: fast
+default: true
+camera: false
+render_device: cpu          # CPU-only render, no GPU claimed
+vllm: keep_running          # no GPU mutex acquisition needed
+sensors: [imu, encoders, contacts]
+gz_args: "-s -r --headless-rendering"
+physics: {engine: dart, max_step_size: 0.001, real_time_factor: 0}

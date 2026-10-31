@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Per-robot node parameters. Every topic name the NEML nodes use lives here;
+# none of them is hardcoded in a launch file or in a node. Renaming a topic is
+# a change to this file alone.
+#
+# Names are relative, so they resolve inside the robot namespace: with
+# namespace r01, `state/safety` becomes /r01/state/safety.
+#
+# Topic classes follow the SS17.2 table by their first segment:
+#   telemetry/*  BEST_EFFORT  VOLATILE          KEEP_LAST(1)
+#   cmd/*        RELIABLE     VOLATILE          KEEP_LAST(10)
+#   state/*      RELIABLE     TRANSIENT_LOCAL   KEEP_LAST(1)
+#   camera/*     BEST_EFFORT  VOLATILE          KEEP_LAST(1)
+# The nodes apply those profiles; this file only decides the names.
+
+/**:
+  ros__parameters:
+    use_sim_time: false
+
+/**/watchdog_monitor:
+  ros__parameters:
+    heartbeat_topic: telemetry/watchdog_heartbeat
+    estop_topic: telemetry/estop
+    status_topic: state/safety
+    motor_enable_topic: cmd/motor_enable
+    trip_topic: cmd/safety_trip
+    reset_service: safety/reset
+    heartbeat_timeout_s: 0.150      # SS5.1: the ATmega opens the relay at 150 ms
+    evaluate_rate_hz: 200.0         # 5 ms, inside the 50 ms T-074 budget
+    keepalive_period_s: 0.200       # republish period when nothing changed
+    start_latched: true             # a physical robot boots needing a human
+
+/**/camera_gate:
+  ros__parameters:
+    depth_topic: camera/depth/image_raw
+    color_topic: camera/color/image_raw
+    compressed_topic: camera/image/compressed
+    obstacle_topic: telemetry/obstacle_distance
+    max_rate_hz: 2.0                # cap on what one operator can pull (SS17.2)
+    jpeg_quality: 60                # 0-100
+    min_valid_m: 0.07               # realsense d405 usable range
+    max_valid_m: 3.0
+    roi_fraction: 0.5
+
+/**/link_guard:
+  ros__parameters:
+    heartbeat_topic: /swarm/coordinator_heartbeat   # global: one coordinator
+    trip_topic: cmd/safety_trip
+    link_timeout_s: 2.0             # T-083 deadline
+    trip_fraction: 0.8              # fire at 1.6 s so the transition finishes
+    check_rate_hz: 20.0

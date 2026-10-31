@@ -1,0 +1,172 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  One 4-DOF leg of quadruped_v2 (NEML_SPEC.md SS13.3: leg_count 4,
+  dof_per_leg 4, total_dof 16). Joint order from the body outwards:
+  hip_yaw (abduction, X axis) -> hip_pitch (Y) -> knee (Y) -> ankle (Y).
+
+  Every joint is an sts3215 and every limit comes from the genome `limits`
+  block, which SS13.3 closes to the evolution loop:
+      effort   = 2.5 Nm   (joint_torque_nm_max)
+      velocity = 6.0 rad/s (joint_velocity_rads_max)
+
+  SS12.2: collision geometry is a primitive, never the visual mesh.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="neml_leg" params="prefix x_sign y_sign">
+
+    <!-- ============================ hip ============================ -->
+    <link name="${prefix}_hip_link">
+      <inertial>
+        <origin xyz="0 ${y_sign * 0.012} 0" rpy="0 0 0"/>
+        <mass value="${hip_mass}"/>
+        <inertia ixx="${hip_ixx}" ixy="${hip_ixy}" ixz="${hip_ixz}"
+                 iyy="${hip_iyy}" iyz="${hip_iyz}" izz="${hip_izz}"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://neml_description/meshes/hip_link.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="neml_shell"/>
+      </visual>
+      <collision>
+        <!-- primitive, not the mesh (SS12.2) -->
+        <origin xyz="0 ${y_sign * 0.012} 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.050 0.045 0.045"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_hip_yaw" type="revolute">
+      <parent link="base_link"/>
+      <child link="${prefix}_hip_link"/>
+      <origin xyz="${x_sign * hip_x} ${y_sign * hip_y} ${hip_z}" rpy="0 0 0"/>
+      <axis xyz="1 0 0"/>
+      <limit lower="${-hip_yaw_range}" upper="${hip_yaw_range}"
+             effort="${joint_effort_nm}" velocity="${joint_velocity_rads}"/>
+      <dynamics damping="${joint_damping}" friction="${joint_friction}"/>
+    </joint>
+
+    <!-- ========================== upper leg ========================= -->
+    <link name="${prefix}_upper_link">
+      <inertial>
+        <origin xyz="0 0 ${-upper_len / 2}" rpy="0 0 0"/>
+        <mass value="${upper_mass}"/>
+        <inertia ixx="${upper_ixx}" ixy="${upper_ixy}" ixz="${upper_ixz}"
+                 iyy="${upper_iyy}" iyz="${upper_iyz}" izz="${upper_izz}"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://neml_description/meshes/upper_link.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="neml_shell"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-upper_len / 2}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.030 0.028 ${upper_len}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_hip_pitch" type="revolute">
+      <parent link="${prefix}_hip_link"/>
+      <child link="${prefix}_upper_link"/>
+      <origin xyz="0 ${y_sign * 0.030} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-hip_pitch_range}" upper="${hip_pitch_range}"
+             effort="${joint_effort_nm}" velocity="${joint_velocity_rads}"/>
+      <dynamics damping="${joint_damping}" friction="${joint_friction}"/>
+    </joint>
+
+    <!-- ========================== lower leg ========================= -->
+    <link name="${prefix}_lower_link">
+      <inertial>
+        <origin xyz="0 0 ${-lower_len / 2}" rpy="0 0 0"/>
+        <mass value="${lower_mass}"/>
+        <inertia ixx="${lower_ixx}" ixy="${lower_ixy}" ixz="${lower_ixz}"
+                 iyy="${lower_iyy}" iyz="${lower_iyz}" izz="${lower_izz}"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://neml_description/meshes/lower_link.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="neml_shell"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 ${-lower_len / 2}" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.026 0.024 ${lower_len}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_knee" type="revolute">
+      <parent link="${prefix}_upper_link"/>
+      <child link="${prefix}_lower_link"/>
+      <origin xyz="0 0 ${-upper_len}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-knee_range}" upper="0.0"
+             effort="${joint_effort_nm}" velocity="${joint_velocity_rads}"/>
+      <dynamics damping="${joint_damping}" friction="${joint_friction}"/>
+    </joint>
+
+    <!-- ============================ foot ============================ -->
+    <link name="${prefix}_foot_link">
+      <inertial>
+        <origin xyz="0 0 ${-foot_radius}" rpy="0 0 0"/>
+        <mass value="${foot_mass}"/>
+        <inertia ixx="${foot_ixx}" ixy="${foot_ixy}" ixz="${foot_ixz}"
+                 iyy="${foot_iyy}" iyz="${foot_iyz}" izz="${foot_izz}"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://neml_description/meshes/foot_pad.stl" scale="1 1 1"/>
+        </geometry>
+        <material name="neml_tpu"/>
+      </visual>
+      <collision>
+        <!-- sphere: the only contact primitive that keeps DART stable at
+             max_step_size 0.001 (SS11.1) without a contact-patch hack -->
+        <origin xyz="0 0 ${-foot_radius}" rpy="0 0 0"/>
+        <geometry>
+          <sphere radius="${foot_radius}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_ankle" type="revolute">
+      <parent link="${prefix}_lower_link"/>
+      <child link="${prefix}_foot_link"/>
+      <origin xyz="0 0 ${-lower_len}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="${-ankle_range}" upper="${ankle_range}"
+             effort="${joint_effort_nm}" velocity="${joint_velocity_rads}"/>
+      <dynamics damping="${joint_damping}" friction="${joint_friction}"/>
+    </joint>
+
+    <!-- Gazebo surface properties: SS11.4 nominal friction 0.7, randomized
+         +-15% per run by the sim runner, never edited here. -->
+    <gazebo reference="${prefix}_foot_link">
+      <mu1>0.7</mu1>
+      <mu2>0.7</mu2>
+      <sensor name="${prefix}_foot_contact" type="contact">
+        <always_on>true</always_on>
+        <update_rate>200</update_rate>
+        <contact>
+          <collision>${prefix}_foot_link_collision</collision>
+        </contact>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

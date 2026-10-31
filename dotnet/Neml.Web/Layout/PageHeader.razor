@@ -1,0 +1,16 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@* The same top of every page: what this place is for in a sentence, and the actions that belong to it. *@
+<div class="page-head">
+    <div>
+        <h1>@Title</h1>
+        @if (!string.IsNullOrEmpty(Help)) { <p>@Help</p> }
+    </div>
+    @if (Actions is not null) { <div class="actions">@Actions</div> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Help { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

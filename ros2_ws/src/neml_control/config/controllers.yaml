@@ -1,0 +1,94 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# ros2_control configuration for quadruped_v2 (NEML_SPEC.md SS13.3, 16 DOF).
+#
+# update_rate 1000 Hz is not a taste call: SS2 fixes the motion loop at 1 kHz
+# on the STM32F446, and SS11.1 fixes the sim physics step at 0.001 s. Running
+# the manager at 1000 Hz makes exactly one control update per physics step, so
+# a gait that works in sim keeps its timing on hardware. Changing this number
+# breaks the sim-to-real protocol of SS11.3.
+#
+# Two command controllers are configured and only one is active at a time:
+#   joint_trajectory_controller - skills and manoeuvres (position)
+#   joint_effort_controller     - torque-level work and compliant contact
+# The safety latch (neml_safety) is NOT a controller: it reports and requests,
+# the hardware relay of SS5.1 is what actually removes power.
+
+controller_manager:
+  ros__parameters:
+    update_rate: 1000                # Hz - SS2 / SS11.1, do not change alone
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    imu_sensor_broadcaster:
+      type: imu_sensor_broadcaster/IMUSensorBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    joint_effort_controller:
+      type: effort_controllers/JointGroupEffortController
+
+joint_state_broadcaster:
+  ros__parameters:
+    use_local_topic_name: true       # stays inside the robot namespace
+
+imu_sensor_broadcaster:
+  ros__parameters:
+    sensor_name: bno085              # SS13.3 imu model
+    frame_id: imu_link
+    use_local_topic_name: true
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - fl_hip_yaw
+      - fl_hip_pitch
+      - fl_knee
+      - fl_ankle
+      - fr_hip_yaw
+      - fr_hip_pitch
+      - fr_knee
+      - fr_ankle
+      - rl_hip_yaw
+      - rl_hip_pitch
+      - rl_knee
+      - rl_ankle
+      - rr_hip_yaw
+      - rr_hip_pitch
+      - rr_knee
+      - rr_ankle
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0        # Hz - telemetry class, not the control rate
+    action_monitor_rate: 20.0        # Hz
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.02   # rad/s
+      goal_time: 0.5                     # s
+
+joint_effort_controller:
+  ros__parameters:
+    joints:
+      - fl_hip_yaw
+      - fl_hip_pitch
+      - fl_knee
+      - fl_ankle
+      - fr_hip_yaw
+      - fr_hip_pitch
+      - fr_knee
+      - fr_ankle
+      - rl_hip_yaw
+      - rl_hip_pitch
+      - rl_knee
+      - rl_ankle
+      - rr_hip_yaw
+      - rr_hip_pitch
+      - rr_knee
+      - rr_ankle
+    interface_name: effort

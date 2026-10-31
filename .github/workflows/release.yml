@@ -1,0 +1,87 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Tagged build. The tag is the source of truth for the version, and the tree
+# must already carry it (`scripts/release/release.py stamp X.Y.Z` before
+# tagging). Every artefact leaves here with the SPEC 0.6 record attached:
+# model, prompt hash, seed, input hash.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # creating the release and uploading artefacts
+
+jobs:
+  release:
+    name: Build and publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The tag and the tree must agree; a mismatch means someone tagged before
+      # stamping, and every artefact below would carry the wrong version.
+      - name: Version is stamped in the tree
+        run: python scripts/release/release.py stamp "${{ steps.version.outputs.version }}" --check
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: Publish neml-api (SPEC 17.4 step 7)
+        run: dotnet publish dotnet/Neml.Api -c Release -o dist/api
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+      - name: Build the operator apk (SPEC 17.4 step 8)
+        run: |
+          flutter pub get
+          flutter build apk --release
+        working-directory: mobile
+      - run: |
+          mkdir -p dist
+          cp mobile/build/app/outputs/flutter-apk/app-release.apk \
+             "dist/neml-${{ steps.version.outputs.version }}.apk"
+
+      # ponytail: the embed image builds torch and exports ONNX (~10 min, GB of
+      # wheels); it is built on the lab box, not here. brain and sandbox are the
+      # two images a release actually has to reproduce.
+      - name: Build the container images
+        run: |
+          docker build -f docker/brain/Dockerfile \
+            -t "neml/brain:${{ steps.version.outputs.version }}" .
+          docker build -t "neml/sandbox:${{ steps.version.outputs.version }}" docker/sandbox
+
+      - name: Artefact manifest (SPEC 0.6)
+        run: |
+          tar -czf "dist/neml-api-${{ steps.version.outputs.version }}.tar.gz" -C dist/api .
+          rm -rf dist/api
+          python scripts/release/release.py manifest "${{ steps.version.outputs.version }}" \
+            dist/*.apk dist/*.tar.gz --out dist/manifest.json
+          cat dist/manifest.json
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "NEML ${{ steps.version.outputs.version }}" \
+            --notes "Artefact provenance is in manifest.json (NEML_SPEC.md 0.6)." \
+            dist/manifest.json dist/*.apk dist/*.tar.gz

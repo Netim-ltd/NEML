@@ -1,0 +1,132 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/yetenekler"
+@inject ApiClient Api
+
+<PageTitle>Yetenekler — NEML</PageTitle>
+
+<PageHeader Title="Yetenekler" Help="İki tür yetenek var: robotun simülasyonda öğrendiği davranışlar ve labın parça yaparken öğrendiği doğrulanmış tarifler." />
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+<h2>Davranış yetenekleri</h2>
+@if (skills.Length == 0)
+{
+    <EmptyState Title="Henüz davranış yeteneği yok" Hint="Bir robot tasarımı simülasyonda koşturulup doğrulandığında burada görünür. Şu ana kadar engelsiz tamamlanan tasarım olmadı." Icon="skill" />
+}
+<table>
+    <thead><tr><th>Skill</th><th>Sürüm</th><th>Durum</th><th>Genome</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var s in skills)
+        {
+            <tr>
+                <td>@s.SkillKey</td><td>v@s.Version</td>
+                <td><span class="state">@s.Status</span></td>
+                <td class="muted">@s.GenomeId</td>
+                <td><button class="ghost" @onclick="() => ToggleAsync(s.SkillKey)">Sürümler</button></td>
+            </tr>
+            @if (open == s.SkillKey)
+            {
+                @foreach (var v in versions)
+                {
+                    <tr>
+                        <td></td><td class="muted">v@v.Version</td>
+                        <td class="muted">@v.Status</td>
+                        <td class="muted">@v.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td><td></td>
+                    </tr>
+                }
+            }
+        }
+    </tbody>
+</table>
+
+<h2 style="margin-top:var(--space-5)">Parça tarifleri (lab kendi öğrendi)</h2>
+<p class="muted">Lab bir parçayı başarıyla yaptığında tarifini saklar ve benzer bir parça isteyince örnek olarak kullanır. Senin onayın gerekmez.</p>
+@if (recipes is null)
+{
+    <p class="muted" role="status">Yükleniyor…</p>
+}
+else if (recipes.Count == 0)
+{
+    <EmptyState Title="Henüz parça tarifi yok" Hint="Lab ilk parçasını başarıyla yaptığında burada görünür." Icon="skill" />
+}
+else
+{
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th scope="col">Parça</th><th scope="col">Kaynak</th></tr></thead>
+            <tbody>
+                @foreach (var r in recipes)
+                {
+                    <tr><td>@r.Text</td><td class="muted">@r.Source</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private sealed record Recipe(string Text, string Source);
+
+    private List<Recipe>? recipes;
+
+    private Skill[] skills = [];
+    private Skill[] versions = [];
+    private string? open;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            skills = await Api.GetSkillsAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Skill listesi alınamadı.";
+        }
+
+        await LoadRecipesAsync();
+    }
+
+    private async Task LoadRecipesAsync()
+    {
+        try
+        {
+            var accepted = await Api.LearnOpAsync(new { op = "state" });
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: System.Text.Json.JsonValueKind.Object } r && r.TryGetProperty("recipes", out var rows))
+                {
+                    recipes = rows.EnumerateArray().Select(x => new Recipe(x.GetProperty("text").GetString() ?? "", x.GetProperty("source").GetString() ?? "")).ToList();
+                }
+
+                return;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            // the behaviour skills above still show; the recipe list stays empty
+        }
+
+        recipes ??= [];
+    }
+
+    private async Task ToggleAsync(string key)
+    {
+        if (open == key)
+        {
+            open = null;
+            return;
+        }
+
+        open = key;
+        versions = await Api.GetSkillVersionsAsync(key);
+    }
+}

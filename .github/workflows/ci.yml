@@ -1,0 +1,397 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md 18.2 - the nine blocking gates, one job each (T-007).
+# A job that needs ROS 2 Jazzy or Gazebo Harmonic cannot run on a GitHub runner,
+# so it is split off and gated on a pull request label; see `urdf-ros2` and
+# `sim-regression-gazebo` at the bottom.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+
+  # ---------------------------------------------------------- gate 1: Python
+  python:
+    name: "1. ruff + mypy --strict + bandit (brain + mcp_servers)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --system "./brain[dev]"
+      # Both Python trees, under the same repo-root ruff.toml / mypy.ini.
+      - run: ruff check brain mcp_servers
+      - run: ruff format --check brain mcp_servers
+      - run: mypy --strict brain/neml_brain
+      - run: mypy --strict mcp_servers
+      - run: bandit -q -r brain/neml_brain mcp_servers -x mcp_servers/tests
+      # SPEC 18.1: Python unit tests run on every commit. Integration tests need
+      # testcontainers and are left to the nightly box, not this runner.
+      - run: pytest -q -m "not integration"
+        working-directory: brain
+      - run: pytest -q docker/embed # SPEC 4.6 / T-006 contract tests
+      # The autonomy and settings SQL is plain text, so it only counts once it has
+      # run against PostgreSQL 16 + pgvector (ubuntu runners ship Docker).
+      - run: pytest -q -m integration brain/tests/autonomy/test_db_repo_integration.py
+        env:
+          NEML_TEST_PG: "1"
+      # SPEC 15 names docs/api/ for the OpenAPI output; nothing else writes it.
+      - run: python scripts/release/export_openapi.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: docs/api/neml-brain.json
+      # SPEC 12.4 profiles against the SPEC 12.3 DFM limits they have to realise.
+      - run: pytest -q manufacturing/slicer_profiles
+      # SPEC 6.2 servers carry the approval gate and the determinism rule; SPEC
+      # 0.9 says they ship with tests, so CI has to run them.
+      - run: pytest -q mcp_servers
+      # SPEC 18.1: the release/calibration helpers and the pure-Python half of
+      # ros2_ws are host-runnable. Only launch_testing needs a sourced ROS 2,
+      # so that one file stays with the label-gated urdf-ros2 job below.
+      - run: pytest -q scripts
+      - run: pytest -q ros2_ws/src --ignore=ros2_ws/src/neml_bringup/test/test_safety_launch.py
+        env:
+          PYTHONPATH: ros2_ws/src/neml_perception:ros2_ws/src/neml_safety:ros2_ws/src/neml_sim:ros2_ws/src/neml_swarm
+
+  # ------------------------------------------------- SPEC 18.1: firmware units
+  # All three suites are host tests by design - plain gcc, no hardware, no
+  # cross toolchain. They were written and then never run; this is the job.
+  firmware:
+    name: "1b. firmware host tests (gcc, no hardware)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: safety_watchdog decision logic (SPEC 5.1, the L0 guard)
+        run: make -C firmware/safety_watchdog test
+      - name: stm32_motion control loop + servo bus
+        run: |
+          cmake -B build-stm32 -DHOST_TESTS=ON firmware/stm32_motion
+          cmake --build build-stm32
+          ctest --test-dir build-stm32 --output-on-failure
+      - name: esp32_aux sensor conversions
+        run: |
+          cmake -B build-esp32 -DHOST_TESTS=ON firmware/esp32_aux
+          cmake --build build-esp32
+          ctest --test-dir build-esp32 --output-on-failure
+
+  # ---------------------------------------------------------- gate 2: .NET
+  dotnet:
+    name: "2. dotnet format + dotnet test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - run: dotnet restore dotnet/Neml.sln
+      - run: dotnet format dotnet/Neml.sln --verify-no-changes --no-restore
+      # SPEC 18.1 puts the integration level on testcontainers: Neml.Tests starts its own
+      # PostgreSQL through the runner's Docker, so there is no service container to declare
+      # and no NEML_TEST_POSTGRES to export. That variable only overrides the container.
+      - run: dotnet test dotnet/Neml.sln --no-restore --collect:"XPlat Code Coverage"
+      - name: Coverage floor (SPEC 18.1 unit target is 75%)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os, sys, xml.etree.ElementTree as ET
+
+          TARGET = 75.0   # SPEC 18.1, "Birim (.NET) | xUnit | Her commit | %75"
+          FLOOR = 52.0    # Ratchet: today's number. Raise it, never lower it.
+
+          reports = glob.glob("dotnet/Neml.Tests/TestResults/*/coverage.cobertura.xml")
+          if not reports:
+              sys.exit("::error::no cobertura report; did the collector run?")
+
+          root = ET.parse(max(reports, key=os.path.getmtime)).getroot()
+          rate = float(root.get("line-rate")) * 100
+          for package in root.iter("package"):
+              print(f'{package.get("name")}: {float(package.get("line-rate")) * 100:.1f}%')
+          print(f"total: {rate:.2f}% (floor {FLOOR}%, SPEC 18.1 target {TARGET}%)")
+
+          if rate < FLOOR:
+              sys.exit(f"::error::line coverage {rate:.2f}% is below the {FLOOR}% floor")
+          if rate < TARGET:
+              # Neml.Web is Blazor components; covering those needs a renderer SPEC 18.1
+              # does not name, so the gap is reported rather than silently accepted.
+              print(f"::warning::line coverage {rate:.2f}% is still under the SPEC 18.1 target of {TARGET}%")
+          PY
+
+  # ---------------------------------------------------------- gate 3: Flutter
+  flutter:
+    name: "3. flutter analyze + flutter test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2" # SPEC 10.1
+          channel: stable
+      - run: flutter pub get
+        working-directory: mobile
+      - run: flutter analyze
+        working-directory: mobile
+      - run: flutter test
+        working-directory: mobile
+      - run: flutter build web --release
+        working-directory: mobile
+      - run: test -s build/web/sqlite3.wasm && test -s build/web/drift_worker.js
+        working-directory: mobile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neml-web
+          path: mobile/build/web
+          if-no-files-found: error
+
+  # -------------------------------------------------------- gate 4: copyright
+  copyright:
+    name: "4. copyright header on every new file"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Header check (SPEC 1.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          header='Copyright (c) 2026 Mustafa Gulsoy.'
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}" || true
+            files=$(git diff --name-only --diff-filter=A "origin/${{ github.base_ref }}...HEAD")
+            echo "checking files added against origin/${{ github.base_ref }}"
+          else
+            files=$(git ls-files)
+            echo "no base ref: checking every tracked file"
+            # The gate must never pass vacuously (empty index = nothing checked).
+            [ -n "$files" ] || { echo "::error::gate 4 found no tracked file"; exit 1; }
+          fi
+          rc=0
+          for f in $files; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              # Generated, unwritable or not ours to stamp. Keep this list in
+              # step with .pre-commit-config.yaml.
+              NEML_SPEC.md|LICENSE|docs/api/*) continue ;;
+              # Marker files that must stay zero bytes: ament's resource index
+              # and PEP 561's py.typed.
+              ros2_ws/src/*/resource/*|*/py.typed) continue ;;
+              # .arb is JSON syntax: it cannot carry a comment.
+              *.json|*.arb|*.lock|*.sln|*.gitkeep) continue ;;
+              *.stl|*.step|*.3mf|*.gcode|*.png|*.jpg|*.mp4|*.bag|*.FCStd|*.ico|*.ttf) continue ;;
+              mobile/lib/*|mobile/test/*|mobile/pubspec.yaml|mobile/analysis_options.yaml) ;;
+              mobile/*) continue ;;
+            esac
+            if ! head -n 5 "$f" | grep -qF "$header"; then
+              echo "::error file=$f::missing copyright header (SPEC 1.2)"
+              rc=1
+            fi
+          done
+          exit $rc
+
+  # ----------------------------------------------------- gate 5: genome schema
+  genome-schema:
+    name: "5. genome JSON Schema validation"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install jsonschema pyyaml
+      - name: Validate hardware/genome against genome.schema.json (SPEC 13.3)
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          import yaml
+          from jsonschema import Draft202012Validator
+
+          root = pathlib.Path("hardware/genome")
+          schema_path = root / "genome.schema.json"
+          if not schema_path.is_file():
+              sys.exit(f"::error::{schema_path} is missing; gate 5 cannot pass without it")
+          validator = Draft202012Validator(json.loads(schema_path.read_text(encoding="utf-8")))
+          validator.check_schema(validator.schema)
+
+          genomes = sorted(p for p in root.glob("*.y*ml"))
+          if not genomes:
+              sys.exit("::error::no genome document in hardware/genome (SPEC 13.3)")
+          failed = False
+          for path in genomes:
+              errors = sorted(validator.iter_errors(yaml.safe_load(path.read_text(encoding="utf-8"))),
+                              key=lambda e: list(e.path))
+              for error in errors:
+                  failed = True
+                  where = "/".join(str(p) for p in error.path) or "<root>"
+                  print(f"::error file={path}::{where}: {error.message}")
+              print(f"{path}: {'FAIL' if errors else 'ok'}")
+          sys.exit(1 if failed else 0)
+          PY
+
+  # ------------------------------------------------------------- gate 6: URDF
+  urdf:
+    name: "6. URDF validation + inertia plausibility"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --system "./brain"
+      - name: check_urdf + triangle inequality + positive mass (SPEC 12.2)
+        run: |
+          python - <<'PY'
+          import pathlib, sys
+          from neml_brain.generators.urdf import check_urdf, validate_urdf
+
+          # The gate must never pass vacuously: prove the validator still
+          # rejects a link that breaks the triangle inequality and has no mass.
+          BAD = """<robot name="bad"><link name="base"><inertial>
+          <mass value="0"/><inertia ixx="1" iyy="1" izz="9" ixy="0" ixz="0" iyz="0"/>
+          </inertial><collision><geometry><box size="1 1 1"/></geometry></collision>
+          </link></robot>"""
+          problems = validate_urdf(BAD)
+          assert any("mass" in p for p in problems), problems
+          assert any("izz" in p or "triangle" in p for p in problems), problems
+          print(f"validator self-check ok ({len(problems)} problems on the bad sample)")
+
+          failed = False
+          for path in sorted(pathlib.Path(".").rglob("*.urdf")):
+              result = check_urdf(path)
+              print(f"{path}: {'ok' if result.ok else 'FAIL'} [{result.tool}]")
+              for problem in result.problems:
+                  failed = True
+                  print(f"::error file={path}::{problem}")
+          sys.exit(1 if failed else 0)
+          PY
+      - name: Note
+        run: echo "xacro expansion needs ROS 2 - see the label-gated urdf-ros2 job"
+
+  # --------------------------------------------------- gate 7: sim regression
+  sim-regression:
+    name: "7. sim regression suite (pytest -m regression)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --system "./brain[dev]"
+      - name: The regression marker must exist (SPEC 18.1)
+        run: grep -q '"regression:' brain/pyproject.toml
+      - name: Run the regression suite
+        shell: bash
+        working-directory: brain
+        run: |
+          set -uo pipefail
+          set +e  # exit 5 (nothing collected) is tolerated below
+          # Faz 2 fills this suite (T-03x). Until then an empty collection is a
+          # report, not a failure; every other exit code is a failure.
+          pytest -q -m regression --strict-markers
+          rc=$?
+          case $rc in
+            0) echo "regression suite passed" ;;
+            5) echo "::notice::no regression test collected yet (Faz 2, T-03x) - marker is registered" ;;
+            *) exit $rc ;;
+          esac
+      - run: echo "Gazebo-backed regression runs in the label-gated sim-regression-gazebo job"
+
+  # ------------------------------------------------------ gate 8: licence scan
+  licence-scan:
+    name: "8. licence scan (no GPL/AGPL source in the tree)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No copyleft source (SPEC 1.3)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # SPEC 1.3: FreeCAD, KiCad and PrusaSlicer are invoked as separate
+          # processes. Their source must never be copied in here.
+          pattern='SPDX-License-Identifier:[[:space:]]*(A|L)?GPL|under the terms of the GNU (General|Lesser|Affero)|GNU AFFERO GENERAL PUBLIC LICENSE'
+          if git grep -nEI "$pattern" -- . ':!NEML_SPEC.md' ':!.github/workflows/ci.yml' ':!.pre-commit-config.yaml'; then
+            echo "::error::GPL/AGPL/LGPL licensed source found in the tree (SPEC 1.3)"
+            exit 1
+          fi
+          # A vendored copy is the other way copyleft gets in.
+          if git ls-files | grep -Ei '(^|/)(vendor|third_party|external)/.*\.(c|cc|cpp|h|hpp|py|cs|dart)$'; then
+            echo "::error::vendored third-party source found; call the tool as a process instead (SPEC 1.3)"
+            exit 1
+          fi
+          echo "no copyleft source in the tree"
+
+  # ------------------------------------------------------- gate 9: secret scan
+  secret-scan:
+    name: "9. gitleaks"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks detect (SPEC 5.4)
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source=/repo --gitleaks-ignore-path=/repo/.gitleaksignore \
+            --redact --no-banner --verbose
+      # An address is not a secret pattern, so gitleaks will never catch it.
+      # SPEC 1.2 ships a placeholder; the owner's real address stays out.
+      - name: Owner contact address stays a placeholder (SPEC 1.2)
+        shell: bash
+        run: |
+          set -uo pipefail
+          if git grep -nEI '[A-Za-z0-9._%+-]+@(kardelenglobal[.]com|gmail[.]com|outlook[.]com|hotmail[.]com)' -- . ':!.github/workflows/ci.yml'; then
+            echo "::error::a real contact address is in the tree; use mustafa.gulsoy@neml.local (SPEC 1.2)"
+            exit 1
+          fi
+          echo "no real contact address in the tree"
+
+  # ------------------------------------------------- label gated: needs ROS 2
+  # The GitHub runner has no ROS 2 Jazzy and no Gazebo Harmonic. These two run
+  # in the ROS container image (ROS 2 only) and on the lab box (Gazebo), and are
+  # requested per pull request with a label.
+  urdf-ros2:
+    name: "6b. xacro + check_urdf (label: ros2)"
+    if: contains(github.event.pull_request.labels.*.name, 'ros2')
+    runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y --no-install-recommends liburdfdom-tools python3-pytest ros-jazzy-xacro
+      - name: Expanded URDF checks (SPEC 12.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /opt/ros/jazzy/setup.sh
+          # -rs prints why anything skipped; a skip here means xacro is missing,
+          # which is exactly what this job exists to cover.
+          python3 -m pytest -q -rs ros2_ws/src/neml_description/test | tee out.txt
+          grep -q 'skipped' out.txt && { echo "::error::tests skipped in the ROS job"; exit 1; } || true
+
+  sim-regression-gazebo:
+    name: "7b. Gazebo regression (label: gazebo, self-hosted lab)"
+    if: contains(github.event.pull_request.labels.*.name, 'gazebo')
+    runs-on: [self-hosted, neml-lab] # the only machine with Harmonic + the GPU
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regression against the simulator (SPEC 11.2)
+        working-directory: brain
+        run: pytest -q -m regression --strict-markers

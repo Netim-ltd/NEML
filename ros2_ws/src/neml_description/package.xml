@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>neml_description</name>
+  <version>0.1.0</version>
+  <description>quadruped_v2 URDF/xacro modeli ve mesh dizini (NEML_SPEC.md SS12.2, SS13.3).</description>
+  <maintainer email="mustafa.gulsoy@neml.local">Mustafa Gulsoy</maintainer>
+  <license>AGPL-3.0-or-later</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>urdf</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
+  <exec_depend>topic_based_ros2_control</exec_depend>
+  <exec_depend>neml_control</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>xacro</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

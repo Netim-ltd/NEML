@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPEC 14.1: the autonomy loop on the lab station (no Docker). Install with
+#   sudo cp deploy/systemd/neml-autonomy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now neml-autonomy
+# It idles until NEML_AUTONOMY_ENABLED=true is in /etc/neml/autonomy.env, and it
+# runs the loop in simulation only (ADR-014).
+[Unit]
+Description=NEML autonomy loop (simulation only)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=neml
+WorkingDirectory=/opt/neml
+EnvironmentFile=/etc/neml/autonomy.env
+Environment=NEML_AUTONOMY_MODE=sim_only
+ExecStart=/opt/neml/brain/.venv/bin/python -m neml_brain.autonomy
+Restart=on-failure
+RestartSec=10
+# The loop must never be the thing that can touch hardware or the host.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/neml/work /srv/neml/artifacts /var/lib/neml
+
+[Install]
+WantedBy=multi-user.target

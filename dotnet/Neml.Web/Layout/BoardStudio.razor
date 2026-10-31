@@ -1,0 +1,106 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inject ApiClient Api
+@inject TokenStore Tokens
+@using System.Text.Json
+
+<section class="card">
+    <h2>Kart ekibi: ajanlar kartı tasarlar</h2>
+    <p class="muted">
+        Şablon yok. Mimar ajan devreyi (parça, pin, net) yazar, malzeme ajanı parça numaralarını seçer, tedarik ajanı Türkiye mağazalarında bulunabilirliğe bakar
+        (Robotistan, Direnc.net; fiyat ya da stok yalnızca mağaza sayfasından alıntıyla kabul edilir), yönlendirme ajanı KiCad'in kural denetimini okuyup parçaları kaydırarak
+        yolların doğru çıktığından emin olur, eleştirmen ajan sonucu inceler. Sipariş vermez: üretimden önce insan incelemesi şarttır (SPEC 13.2).
+    </p>
+    <form @onsubmit="StartAsync" @onsubmit:preventDefault>
+        <input @bind="brief" placeholder="Ne kartı? Örn. IMU ve akım sensörü olan, 5 V girişli küçük sensör kartı" style="width:100%" />
+        <button class="primary" type="submit" disabled="@busy">Tasarla</button>
+        <button class="ghost" type="button" disabled="@busy" @onclick="LoadAsync">Yenile</button>
+    </form>
+    @if (message is not null) { <p class="muted">@message</p> }
+</section>
+
+@foreach (var job in jobs.AsEnumerable().Reverse())
+{
+    <section class="card">
+        <header><strong>@job.GetProperty("brief").GetString()</strong> <span class="state">@job.GetProperty("state").GetString()</span></header>
+        <details open="@(job.GetProperty("state").GetString() == "running")">
+            <summary>Ekibin konuşması (@job.GetProperty("talk").GetArrayLength())</summary>
+            <GroupChat Lines="Talk(job)" />
+        </details>
+        @if (job.TryGetProperty("error", out var err)) { <p class="error">@err.GetString()</p> }
+        @if (job.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.Object)
+        {
+            <p>@r.GetProperty("purpose").GetString() · @r.GetProperty("size_mm")[0].GetDouble() × @r.GetProperty("size_mm")[1].GetDouble() mm ·
+                yollar @(r.GetProperty("clean").GetBoolean() ? "temiz" : "tam temiz değil") ·
+                ERC @(r.GetProperty("erc").GetProperty("passed").GetBoolean() ? "geçti" : "hata var") ·
+                ikinci okuyucu @(r.TryGetProperty("crosscheck", out var cc) && cc.TryGetProperty("passed", out var cp) ? (cp.ValueKind == JsonValueKind.True ? "uyuşuyor" : cp.ValueKind == JsonValueKind.False ? "farklı düşünüyor" : "çalışmadı") : "-") ·
+                Türkiye'de bulunan: @r.GetProperty("sourcing_ok").GetString()</p>
+            <BoardDetail Result="r" />
+        }
+    </section>
+}
+
+@code {
+    private readonly List<JsonElement> jobs = [];
+    private string brief = "";
+    private string? message;
+    private bool busy;
+    private Timer? timer;
+
+    private static List<GroupChat.ChatLine> Talk(JsonElement job) =>
+        job.GetProperty("talk").EnumerateArray().Select(m => new GroupChat.ChatLine(m.GetProperty("agent").GetString() ?? "?", m.GetProperty("text").GetString() ?? "")).ToList();
+
+    private string Link(string url) => $"{url.TrimStart('/')}?access_token={Tokens.Access}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        timer = new Timer(_ => InvokeAsync(async () => { if (jobs.Any(j => j.GetProperty("state").GetString() == "running")) { await LoadAsync(); } }), null, 15000, 15000);
+    }
+
+    private async Task<JsonElement?> RunAsync(object body)
+    {
+        busy = true;
+        try
+        {
+            var accepted = await Api.LearnOpAsync(body);
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r) { return r; }
+                message = status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() : "Olmadı.";
+                return null;
+            }
+
+            message = "Lab cevap vermedi.";
+        }
+        catch (HttpRequestException)
+        {
+            message = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        return null;
+    }
+
+    private async Task LoadAsync()
+    {
+        if (await RunAsync(new { op = "state" }) is { } r && r.TryGetProperty("boards", out var boards) && boards.ValueKind == JsonValueKind.Array)
+        {
+            jobs.Clear();
+            jobs.AddRange(boards.EnumerateArray().Select(b => b.Clone()));
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        if (string.IsNullOrWhiteSpace(brief)) { return; }
+        if (await RunAsync(new { op = "board", brief }) is not null) { message = "Ekip çalışmaya başladı (CPU'da 15-45 dk sürebilir); konuşma bu sayfada akar."; brief = ""; await LoadAsync(); }
+    }
+}

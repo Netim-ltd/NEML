@@ -1,0 +1,46 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §5.4 — the four agents the spec lists, verbatim, plus owner
+# decision 3 (amends §5.4) for the seven §8.2 agents it never granted.
+# Static tool policy: an agent tool list can NEVER be widened at runtime.
+# global_forbidden outranks every agent entry and is UNCHANGED.
+
+agents:
+  planner:
+    tools: [db.read, sim.read, skill.read]
+  mechanical:
+    tools: [db.read, cad.generate, cad.export, sim.run]
+    forbidden: [printer.*, firmware.*, kicad.order]
+  manufacturing:
+    tools: [db.read, slicer.slice, gcode.validate, printer.status]
+    requires_approval: [printer.start]
+  electronics:
+    tools: [db.read, kicad.generate, kicad.drc, kicad.bom]
+    requires_approval: [kicad.gerber_export]
+
+  # --- owner decision 3 (amends §5.4) -------------------------------------
+  # The narrowest grant each §8.2 agent needs to do its job. `requires_approval`
+  # is read here exactly as it is above for printer.start / kicad.gerber_export:
+  # a static grant gated on an approval id, one rule for all four tools.
+  orchestrator:
+    tools: [db.read]
+  coding:
+    tools: [db.read, sandbox.run]
+    forbidden: [printer.*, firmware.*]
+  memory:
+    tools: [db.read, embed.encode, memory.search, memory.write]
+  reflection:
+    tools: [db.read, memory.write]
+  evolution:
+    tools: [db.read, sim.read, sim.run, genome.read, skill.read]
+    requires_approval: [genome.activate]
+  perception:
+    tools: [db.read, sim.read, sim.capture_camera]
+  swarm:
+    tools: [db.read, robot.read]
+    requires_approval: [robot.assign_task]
+global_forbidden:
+  - firmware.flash          # human only, typed at the CLI
+  - safety.*                # L0 is reachable by no agent
+  - db.write_raw

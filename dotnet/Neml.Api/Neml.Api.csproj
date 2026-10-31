@@ -1,0 +1,32 @@
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FirebaseAdmin" Version="3.6.0" />
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="9.0.10" />
+    <!-- advisory published after this release; no patched 9.0.x exists yet (9.0.12 is still flagged). Re-check when a fixed version ships. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-qjpx-jqm5-h2c4" />
+    <!-- Pinned to the version Neml.Infrastructure compiles against, otherwise CS1705. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Neml.Domain\Neml.Domain.csproj" />
+    <ProjectReference Include="..\Neml.Infrastructure\Neml.Infrastructure.csproj" />
+    <ProjectReference Include="..\Neml.Web\Neml.Web.csproj" />
+  </ItemGroup>
+
+</Project>

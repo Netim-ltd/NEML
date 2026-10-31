@@ -1,0 +1,105 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-brain
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: neml-brain
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: neml-brain
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-brain
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: brain
+          image: "{{ required "Set image.repository" .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          command: [uvicorn, neml_brain.main:app, --host, "0.0.0.0", --port, "8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: NEML_ENV
+              value: lab
+            - name: NEML_CONFIG_DIR
+              value: /app/config
+            - name: NEML_NODE_ID
+              value: {{ .Values.nodeId | quote }}
+            - name: NEML_MODEL
+              value: {{ .Values.model | quote }}
+            - name: NEML_VLLM_URL
+              value: {{ .Values.external.vllmUrl | quote }}
+            - name: NEML_EMBED_URL
+              value: {{ .Values.external.embedUrl | quote }}
+            - name: NEML_WORK_DIR
+              value: /srv/neml/work
+            - name: NEML_ARTIFACT_DIR
+              value: /srv/neml/artifacts
+            - name: NEML_OUTBOX_DB
+              value: /var/lib/neml/outbox.db
+            {{- range $name, $url := .Values.external.mcp }}
+            - name: NEML_MCP_URL_{{ upper $name }}
+              value: {{ $url | quote }}
+            {{- end }}
+            - name: NEML_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "Set existingSecret" .Values.existingSecret }}
+                  key: dbUrl
+            - name: NEML_CLOUD_WS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: cloudWs
+            - name: NEML_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: apiKey
+            - name: NEML_MODEL_SIGNING_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: modelSigningSeed
+                  optional: true
+          volumeMounts:
+            - {name: data, mountPath: /srv/neml/work, subPath: work}
+            - {name: data, mountPath: /srv/neml/artifacts, subPath: artifacts}
+            - {name: data, mountPath: /var/lib/neml, subPath: state}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket: {port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data

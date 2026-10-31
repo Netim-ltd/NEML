@@ -1,0 +1,98 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Small control node. PostgreSQL, cloud, LLM, embedding and lab MCP are external.
+name: neml-control
+
+x-brain-image: &brain-image
+  image: docker.io/${NEML_DOCKERHUB_NAMESPACE:?set Docker Hub namespace}/neml-brain:${NEML_IMAGE_TAG:-1.0}
+  env_file:
+    - path: ${NEML_CONTROL_ENV_FILE:-../.env}
+      required: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+
+services:
+  migrate:
+    <<: *brain-image
+    command: [alembic, -c, brain/alembic.ini, upgrade, head]
+    restart: "no"
+    environment:
+      NEML_DB_URL: ${NEML_DB_URL:?set external PostgreSQL URL}
+    cpus: 0.5
+    mem_limit: 512m
+
+  brain:
+    <<: *brain-image
+    command: [uvicorn, neml_brain.main:app, --host, "0.0.0.0", --port, "8080"]
+    restart: unless-stopped
+    networks:
+      default:
+      proxy:
+        aliases: [neml-brain]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    ports: ["${NEML_BIND_IP:-127.0.0.1}:8080:8080"]
+    environment:
+      NEML_CONFIG_DIR: /app/config
+      NEML_DB_URL: ${NEML_DB_URL:?set external PostgreSQL URL}
+      NEML_VLLM_URL: ${NEML_VLLM_URL:?set external model endpoint}
+      NEML_EMBED_URL: ${NEML_EMBED_URL:?set external embedding endpoint}
+      NEML_MODEL: ${NEML_MODEL:?set model name}
+      NEML_WORK_DIR: /srv/neml/work
+      NEML_ARTIFACT_DIR: /srv/neml/artifacts
+      NEML_OUTBOX_DB: /var/lib/neml/outbox.db
+      NEML_CLOUD_WS: ${NEML_CLOUD_WS:?set external cloud WebSocket}
+      NEML_NODE_ID: ${NEML_NODE_ID:?set node identity}
+      NEML_API_KEY: ${NEML_API_KEY:?set bridge API key}
+      NEML_OWNERS: ${NEML_OWNERS:-}
+      NEML_TENANT_ID: ${NEML_TENANT_ID:?set firm tenant ID}
+      NEML_TRAINING_EXPORT_KEY: ${NEML_TRAINING_EXPORT_KEY:?set private GPU export key}
+      NEML_OPERATION_ROUTES: ${NEML_OPERATION_ROUTES:-{}}
+      NEML_OPERATION_SERVICE_KEY: ${NEML_OPERATION_SERVICE_KEY:-}
+      NEML_OPERATION_CLIENT_KEY: ${NEML_OPERATION_CLIENT_KEY:-}
+      NEML_MCP_URL_FREECAD: ${NEML_MCP_URL_FREECAD:?set remote FreeCAD MCP}
+      NEML_MCP_URL_KICAD: ${NEML_MCP_URL_KICAD:?set remote KiCad MCP}
+      NEML_MCP_URL_SIM: ${NEML_MCP_URL_SIM:?set remote simulation MCP}
+      NEML_MCP_URL_FAB: ${NEML_MCP_URL_FAB:?set remote fabrication MCP}
+      NEML_MCP_URL_GENOME: ${NEML_MCP_URL_GENOME:?set remote genome MCP}
+      NEML_MCP_URL_POSTGRES: ${NEML_MCP_URL_POSTGRES:?set remote read-only PostgreSQL MCP}
+      NEML_MCP_URL_FILESYSTEM: ${NEML_MCP_URL_FILESYSTEM:?set remote filesystem MCP}
+      NEML_MCP_URL_GIT: ${NEML_MCP_URL_GIT:?set remote Git MCP}
+      NEML_MCP_URL_BLENDER: ${NEML_MCP_URL_BLENDER:?set remote Blender MCP}
+    volumes:
+      - control-work:/srv/neml/work
+      - control-artifacts:/srv/neml/artifacts
+      - control-state:/var/lib/neml
+    cpus: 0.75
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; health=json.load(urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=10)); assert health['status']=='ok',health.get('degraded')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  model-tls:
+    image: caddy:2
+    profiles: [edge]
+    restart: unless-stopped
+    ports: ["${NEML_LAB_BIND_IP:-127.0.0.1}:8443:8443"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${NEML_TLS_CERT_FILE:-../secrets/lab.crt}:/certs/lab.crt:ro
+      - ${NEML_TLS_KEY_FILE:-../secrets/lab.key}:/certs/lab.key:ro
+    depends_on:
+      brain: {condition: service_healthy}
+    cpus: 0.1
+    mem_limit: 128m
+
+volumes:
+  control-work:
+  control-artifacts:
+  control-state:
+
+networks:
+  default:
+  proxy:
+    external: true
+    name: nginx-proxy-network

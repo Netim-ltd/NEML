@@ -1,0 +1,211 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/robotlar/{Id}"
+@implements IAsyncDisposable
+@inject ApiClient Api
+
+<PageTitle>Robot @Id — NEML</PageTitle>
+
+<p><a href="/">← Panele dön</a></p>
+<h1>Robot @Id</h1>
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (robot is null)
+{
+    <p class="muted">Robot bilgisi bekleniyor.</p>
+}
+else
+{
+    <section class="card">
+        <h2>Durum</h2>
+        <dl>
+            <dt>Durum</dt><dd><span class="state @robot.State">@robot.State</span></dd>
+            <dt>Batarya</dt><dd>@(robot.BatterySoc?.ToString("P0") ?? "—")</dd>
+            <dt>Model</dt><dd>@(robot.GenomeId ?? "—")</dd>
+            <dt>Son görülme</dt><dd>@(robot.LastSeen?.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") ?? "—")</dd>
+            <dt>Kalibrasyon</dt><dd>@(robot.CalibratedAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "Yapılmadı")</dd>
+            <dt>Reality gap</dt><dd>@(robot.RealityGap?.ToString("P1") ?? "—")</dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <h2>Son 60 saniye</h2>
+        <p class="muted">Ölçümler 5 saniyede bir yenilenir. Veri yoksa değer gösterilmez.</p>
+        @foreach (var (metric, title) in Metrics)
+        {
+            var samples = telemetry.GetValueOrDefault(metric) ?? [];
+            <div class="telemetry-row">
+                <strong>@title</strong>
+                <span>@(samples.Length == 0 ? "—" : samples[^1].Value.ToString("0.###"))</span>
+                @if (samples.Length > 1)
+                {
+                    <svg viewBox="0 0 240 48" role="img" aria-label="@title son 60 saniye grafiği">
+                        <polyline points="@Plot(samples)" fill="none" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Son görevler</h2>
+        @if (tasks.Length == 0)
+        {
+            <p class="muted">İlk sayfada bu robota atanmış görev yok.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var task in tasks)
+                {
+                    <li><a href="@($"gorevler/{task.Id}")">@task.Title</a> — @task.State</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Yazılım acil durdurma</h2>
+        <p class="warn">Bu istek komut kuyruğuna alınır. Fiziksel güç kesme anahtarının yerine geçmez.</p>
+        @if (!confirming)
+        {
+            <button class="danger" @onclick="() => confirming = true">Durdurma isteğini hazırla</button>
+        }
+        else
+        {
+            <label>İkinci onay için DURDUR yazın <input @bind="confirmation" autocomplete="off" /></label>
+            <button class="danger" disabled="@(confirmation != "DURDUR" || sending)" @onclick="RequestEstopAsync">İsteği gönder</button>
+            <button @onclick="CancelEstop">Vazgeç</button>
+        }
+        @if (receipt is not null)
+        {
+            <p role="status">@receipt</p>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private static readonly (string Metric, string Title)[] Metrics =
+    [
+        ("battery_soc", "Batarya"),
+        ("motor_current_a", "Motor akımı (A)"),
+        ("temperature_c", "Sıcaklık (°C)"),
+        ("joint_load", "Eklem yükü"),
+    ];
+
+    private readonly CancellationTokenSource stop = new();
+    private Task? refreshTask;
+    private Robot? robot;
+    private TaskItem[] tasks = [];
+    private readonly Dictionary<string, TelemetryPoint[]> telemetry = [];
+    private string? error;
+    private string? receipt;
+    private bool confirming;
+    private bool sending;
+    private string confirmation = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        refreshTask = RefreshLoopAsync();
+    }
+
+    private async Task RefreshLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop.Token))
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var current = await Api.GetRobotAsync(Id, stop.Token);
+            if (current is null)
+            {
+                error = "Robot bulunamadı.";
+                return;
+            }
+            robot = current;
+            var from = DateTimeOffset.UtcNow.AddSeconds(-60);
+            foreach (var (metric, _) in Metrics)
+            {
+                telemetry[metric] = await Api.GetRobotTelemetryAsync(Id, metric, from, stop.Token) ?? [];
+            }
+            tasks = (await Api.GetTasksAsync(ct: stop.Token))
+                .Where(task => task.RobotId == Id)
+                .OrderByDescending(task => task.CreatedAt)
+                .Take(5).ToArray();
+            error = null;
+        }
+        catch (HttpRequestException)
+        {
+            error = "Robot verileri alınamadı. Bağlantıyı kontrol edin.";
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { }
+    }
+
+    private static string Plot(TelemetryPoint[] values)
+    {
+        var ordered = values.OrderBy(value => value.Ts).ToArray();
+        var min = ordered.Min(value => value.Value);
+        var span = Math.Max(ordered.Max(value => value.Value) - min, 0.000001);
+        var start = ordered[0].Ts;
+        var seconds = Math.Max((ordered[^1].Ts - start).TotalSeconds, 1);
+        return string.Join(" ", ordered.Select(value => FormattableString.Invariant(
+            $"{240 * (value.Ts - start).TotalSeconds / seconds:0.##},{44 - 40 * (value.Value - min) / span:0.##}")));
+    }
+
+    private void CancelEstop()
+    {
+        confirming = false;
+        confirmation = "";
+    }
+
+    private async Task RequestEstopAsync()
+    {
+        if (confirmation != "DURDUR" || sending)
+        {
+            return;
+        }
+        sending = true;
+        try
+        {
+            await Api.RequestEstopAsync(Id, "Operator requested software e-stop", stop.Token);
+            receipt = "Durdurma isteği kuyruğa alındı; robot teyidi bekleniyor.";
+            CancelEstop();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Durdurma isteği gönderilemedi. Fiziksel acil durdurmayı kullanın.";
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        stop.Cancel();
+        if (refreshTask is not null)
+        {
+            await refreshTask;
+        }
+        stop.Dispose();
+    }
+}

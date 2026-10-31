@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# JLCPCB, 2 layer, 1 oz finished copper, HASL or ENIG, green mask.
+# NEML_SPEC.md 13.2: the DRC stage runs against this file.
+# Transcribed from the fab's published capability table. Fab limits change:
+# re-check before every order (hardware/electronics/rules/README.md).
+
+(version 1)
+
+(rule "copper clearance"
+	(constraint clearance (min 0.127mm))
+	(condition "A.Type != 'zone' || B.Type != 'zone'"))
+
+(rule "track width"
+	(constraint track_width (min 0.127mm)))
+
+(rule "annular ring"
+	(constraint annular_width (min 0.13mm)))
+
+(rule "via diameter"
+	(constraint via_diameter (min 0.6mm))
+	(condition "A.Type == 'via'"))
+
+(rule "drill size"
+	(constraint hole_size (min 0.3mm) (max 6.3mm)))
+
+(rule "hole to hole"
+	(constraint hole_to_hole (min 0.5mm)))
+
+(rule "copper to board edge"
+	(constraint edge_clearance (min 0.3mm)))
+
+(rule "copper to plated slot or hole"
+	(constraint hole_clearance (min 0.254mm)))
+
+(rule "silkscreen to pad"
+	(constraint silk_clearance (min 0.15mm)))
+
+(rule "silkscreen text"
+	(constraint text_height (min 0.8mm))
+	(constraint text_thickness (min 0.15mm))
+	(condition "A.Layer == 'F.Silkscreen' || A.Layer == 'B.Silkscreen'"))
+
+# A 0.5 mm neck between two pads is the smallest mask dam the fab can hold.
+(rule "solder mask dam"
+	(constraint physical_clearance (min 0.4mm))
+	(condition "A.Type == 'pad' && B.Type == 'pad'"))
+
+# SPEC 13.1: 2 layers. A buried or blind via means the board left the class.
+(rule "no buried or blind vias"
+	(constraint disallow buried_via micro_via))

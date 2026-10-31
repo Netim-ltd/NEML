@@ -1,0 +1,100 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/bot"
+@inject ApiClient Api
+@using System.Text.Json
+
+<PageTitle>Bot arayüzü — NEML</PageTitle>
+
+<PageHeader Title="Bot hesapları" Help="Başka bir yapay zekâ asistanının (ör. OpenClaw) labı kullanması için hesap aç. Bot bir operatördür: iş sıraya koyabilir ve beyine sorabilir, seviye 4 onayları veremez." />
+<p class="muted">
+    Bir dil modeli (LLM ajanı) ya da komut dosyası, lab'ı insan gibi yönetebilir: görev ekler, öncelik değiştirir,
+    kampanya başlatır, Beyne söyler. Bot sıradan bir <strong>operatör</strong> hesabıdır; seviye 4 onayı veremez,
+    onu yalnızca sen verirsin.
+</p>
+
+<section class="card">
+    <h2>1. Bot hesabı</h2>
+    <p class="muted">Botun giriş yapacağı hesap. Şifre yalnızca bir kez gösterilir; ajanın gizli ayarlarına koy.</p>
+    <button class="primary" @onclick="CreateAsync" disabled="@busy">Yeni bot hesabı oluştur</button>
+    @if (account is not null)
+    {
+        <pre>e-posta: @account.Email
+şifre:   @account.Password
+rol:     @account.Role</pre>
+    }
+    @if (error is not null)
+    {
+        <p class="error" role="alert">@error</p>
+    }
+</section>
+
+<section class="card">
+    <h2>2. Botun kullanacağı araçlar</h2>
+    <p class="muted">Makine için aynı liste: <code>GET /api/v1/bot/manifest</code> (JSON). Bir ajanın sistem istemine bunu vermek yeter.</p>
+    @if (manifest is null)
+    {
+        <p class="muted">Yükleniyor…</p>
+    }
+    else
+    {
+        <p>Giriş: <code>POST @manifest.Login</code> → <code>Authorization: Bearer …</code></p>
+        <table>
+            <thead><tr><th>Araç</th><th>Çağrı</th><th>Ne yapar</th></tr></thead>
+            <tbody>
+                @foreach (var tool in manifest.Tools)
+                {
+                    <tr>
+                        <td><code>@tool.Name</code></td>
+                        <td><code>@tool.Method @tool.Path</code></td>
+                        <td>@tool.Description</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <h3>Kurallar</h3>
+        <ul>
+            @foreach (var rule in manifest.Rules)
+            {
+                <li>@rule</li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    private BotManifestView? manifest;
+    private BotAccountView? account;
+    private string? error;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            manifest = await Api.GetBotManifestAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Araç listesi alınamadı.";
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            account = await Api.CreateBotAccountAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Hesap oluşturulamadı (yalnızca sahip oluşturabilir).";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

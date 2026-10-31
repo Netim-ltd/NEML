@@ -1,0 +1,194 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveClient Live
+
+<PageTitle>Panel — NEML</PageTitle>
+
+<PageHeader Title="Panel" Help="Laboratuvarın şu anki hâli: beyin çalışıyor mu, bütçe ne kadar harcandı, robotlar ne yapıyor ve senden bekleyen bir şey var mı." />
+
+@if (error is not null)
+{
+    <Notice Kind="bad">@error</Notice>
+}
+
+@if (pending > 0)
+{
+    <Notice Kind="warn"><a href="onaylar">@pending onay senin kararını bekliyor</a>; fiziksel işlemler onaylanana kadar başlamaz.</Notice>
+}
+
+<section class="card brain">
+    <h2>Beyin</h2>
+    @if (brain is null)
+    {
+        <p class="muted" role="status">Beyinden henüz haber gelmedi. Birkaç saniye sonra yenilenir; sürerse lab bağlantısını kontrol et.</p>
+    }
+    else
+    {
+        <p><span class="pill @(brain.Online ? "ok" : "bad")">@(brain.Online ? "Çevrimiçi" : "Çevrimdışı")</span></p>
+        <dl>
+            <dt>Model</dt>
+            <dd>@(brain.Model ?? "—")</dd>
+            <dt>GPU sahibi</dt>
+            <dd>@(brain.GpuOwner ?? "boşta")</dd>
+            <dt>Son görülme</dt>
+            <dd>@(brain.LastSeen?.ToLocalTime().ToString("dd.MM HH:mm:ss") ?? "—")</dd>
+        </dl>
+    }
+</section>
+
+<section class="card">
+    <h2>Günlük bütçe</h2>
+    @if (brain?.BudgetUsed is not { } used)
+    {
+        <p class="muted">Bütçe bilgisi henüz gelmedi.</p>
+    }
+    else
+    {
+        <div class="bar">
+            <span style="width:@Percent(used)" class="@(used >= 0.9 ? "bad" : "ok")"></span>
+        </div>
+        <p class="muted">Kullanım: @Percent(used) — kaynak kırılımı (§14.4) laboratuvar API'sindedir.</p>
+    }
+</section>
+
+<section>
+    <h2>Robotlar <span class="muted">(@robots.Count)</span></h2>
+    <div class="grid">
+        @foreach (var robot in robots)
+        {
+            <article class="card robot">
+                <header>
+                    <strong><a href="@($"robotlar/{Uri.EscapeDataString(robot.Id)}")">@robot.Id</a></strong>
+                    <span class="state @robot.State">@StateLabel(robot.State)</span>
+                </header>
+                <div class="bar battery">
+                    <span style="width:@Percent((double?)robot.BatterySoc ?? 0)"
+                          class="@((robot.BatterySoc ?? 1m) < 0.3m ? "bad" : "ok")"></span>
+                </div>
+                <p class="muted">Batarya: @Percent((double?)robot.BatterySoc)</p>
+                <p>Görev: @(CurrentTask(robot.Id) ?? "—")</p>
+            </article>
+        }
+        @if (robots.Count == 0)
+        {
+            <EmptyState Title="Kayıtlı robot yok" Hint="Bir robot tasarlatmak için Öğrenme sayfasındaki tasarım kutusunu kullan; tamamlanan tasarımlar Modeller sayfasında görünür." Icon="bot" />
+        }
+    </div>
+</section>
+
+<section class="card">
+    <h2>Bekleyen onaylar</h2>
+    <p><a href="onaylar" class="link">@pending adet bekliyor</a></p>
+</section>
+
+<section class="card">
+    <h2>Son alarmlar</h2>
+    @if (alerts.Count == 0)
+    {
+        <p class="muted"><span class="pill ok">Sorun yok</span> Son zamanlarda alarm gelmedi.</p>
+    }
+    else
+    {
+        <ul class="alerts">
+            @foreach (var (alert, at) in alerts)
+            {
+                <li>
+                    <span class="sev @alert.Severity">@alert.Severity</span>
+                    <code>@alert.Code</code>
+                    <span>@alert.Message</span>
+                    <time>@at.ToLocalTime().ToString("HH:mm:ss")</time>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    private readonly List<(Alert Alert, DateTimeOffset At)> alerts = [];
+    private List<Robot> robots = [];
+    private IReadOnlyList<TaskItem> tasks = [];
+    private BrainStatus? brain;
+    private int pending;
+    private string? error;
+    private IDisposable?[] subscriptions = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        subscriptions =
+        [
+            Live.Hub.On<BrainStatus>("BrainStatus", OnBrainStatusAsync),
+            Live.Hub.On<RobotStateEvent>("RobotState", OnRobotStateAsync),
+            Live.Hub.On<Alert>("Alert", OnAlertAsync),
+        ];
+
+        try
+        {
+            brain = await Api.GetBrainStatusAsync();
+            robots = [.. (await Api.GetRobotsAsync() ?? []).OrderBy(r => r.Id, StringComparer.Ordinal)];
+            tasks = await Api.GetTasksAsync();
+            pending = (await Api.GetPendingApprovalsAsync())?.Length ?? 0;
+        }
+        catch (HttpRequestException)
+        {
+            error = "Panel verisi alınamadı.";
+        }
+    }
+
+    /// <summary>§7 robots carries no current task, so it is read off the running task list.</summary>
+    private string? CurrentTask(string robotId) =>
+        tasks.FirstOrDefault(t => t.RobotId == robotId && t.State == "running")?.Title;
+
+    private Task OnBrainStatusAsync(BrainStatus status)
+    {
+        brain = status;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnRobotStateAsync(RobotStateEvent e)
+    {
+        var index = robots.FindIndex(r => r.Id == e.RobotId);
+        if (index < 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        robots[index] = robots[index] with { State = e.State, BatterySoc = e.BatterySoc, LastSeen = e.LastSeen };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnAlertAsync(Alert alert)
+    {
+        alerts.Insert(0, (alert, DateTimeOffset.UtcNow));
+        if (alerts.Count > 5)
+        {
+            alerts.RemoveRange(5, alerts.Count - 5);
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private static string Percent(double? ratio) => ratio is null ? "—" : $"{ratio.Value * 100:0}%";
+
+    public static string StateLabel(string state) => state switch
+    {
+        "offline" => "çevrimdışı",
+        "idle" => "boşta",
+        "charging" => "şarjda",
+        "running" => "çalışıyor",
+        "fault" => "arıza",
+        "estop" => "acil stop",
+        "maintenance" => "bakım",
+        _ => state,
+    };
+
+    public void Dispose()
+    {
+        foreach (var subscription in subscriptions)
+        {
+            subscription?.Dispose();
+        }
+    }
+}

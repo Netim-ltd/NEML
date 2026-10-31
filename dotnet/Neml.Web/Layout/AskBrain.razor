@@ -1,0 +1,175 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inject ApiClient Api
+@using System.Text.Json
+
+<section class="card ask">
+    <h2>@Title</h2>
+    <p class="muted">Ne istediğini kendi cümlenle yaz. Beyin (dil modeli) anlar ve yapar; fiziksel ya da üretimle ilgili her şey yine senin onayını bekler.</p>
+    <form @onsubmit="SendAsync" @onsubmit:preventDefault>
+        <textarea rows="2" maxlength="2000" placeholder="Örn: Hafif bacak için 3 nesillik evrim kampanyası başlat"
+                  @bind="text" @bind:event="oninput"></textarea>
+        <button class="primary" type="submit" disabled="@(busy || string.IsNullOrWhiteSpace(text))">@(busy ? "Çalışıyor…" : "Gönder")</button>
+    </form>
+    <p class="muted">
+        Örnekler:
+        @foreach (var example in Examples)
+        {
+            <button type="button" class="ghost" @onclick="() => text = example">@example</button>
+        }
+    </p>
+    @if (error is not null)
+    {
+        <p class="error" role="alert">@error</p>
+    }
+    @foreach (var turn in turns.AsEnumerable().Reverse())
+    {
+        <article class="turn">
+            <p><strong>Sen:</strong> @turn.Text</p>
+            <p><strong>Beyin:</strong> @SayAbout(turn.State, turn.Result)</p>
+            @if (turn.Result is not null)
+            {
+                <details><summary>Ayrıntı</summary><pre>@turn.Result.ToString()</pre></details>
+            }
+        </article>
+    }
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Ne yapmak istiyorsun?";
+    [Parameter] public EventCallback Done { get; set; }
+
+    private static readonly string[] Examples =
+    [
+        "Sistemin durumunu söyle",
+        "Hafif bacak için 3 nesillik evrim kampanyası başlat",
+        "Yürüme görevi oluştur, öncelik 50",
+    ];
+
+    private sealed class Turn(string text)
+    {
+        public string Text { get; } = text;
+        public string State { get; set; } = "pending";
+        public JsonElement? Result { get; set; }
+    }
+
+    private readonly List<Turn> turns = [];
+    private string text = "";
+    private string? error;
+    private bool busy;
+
+    private async Task SendAsync()
+    {
+        busy = true;
+        error = null;
+        var turn = new Turn(text.Trim());
+        try
+        {
+            var accepted = await Api.SendBrainCommandAsync(turn.Text);
+            turns.Add(turn);
+            text = "";
+            for (var i = 0; i < 90 && turn.State is "pending" or "delivered"; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null)
+                {
+                    break;
+                }
+
+                turn.State = status.State;
+                turn.Result = status.Result;
+                StateHasChanged();
+            }
+
+            await Done.InvokeAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Komut gönderilemedi.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    /// <summary>The lab's answer as a sentence. Anything not recognised stays under "Ayrıntı".</summary>
+    public static string SayAbout(string state, JsonElement? result)
+    {
+        if (state is "pending" or "delivered")
+        {
+            return "Düşünüyor…";
+        }
+
+        if (state is "failed" or "rejected")
+        {
+            return "Yapamadım" + (Field(result, "error") is { } why ? $": {why}" : ".");
+        }
+
+        var inner = Child(result, "result");
+        if (Field(result, "approval_id") is not null && Field(inner, "executed") != "True")
+        {
+            return "Önce senin onayın gerekiyor. Onaylar ekranına bak.";
+        }
+
+        if (Child(inner, "campaign") is { } campaign)
+        {
+            return $"Evrim kampanyası başlattım: {Field(campaign, "name")}. Evrim ekranından izleyebilirsin.";
+        }
+
+        return Field(result, "intent") switch
+        {
+            "create_task" => "Görevi kuyruğa ekledim. Görevler ekranında görünür.",
+            "update_task" => "Görevi güncelledim.",
+            "cancel_task" => "Görevi iptal ettim.",
+            "explain" or "unknown" => Field(inner, "text") ?? "Bunu anlayamadım; biraz daha açık yazar mısın?",
+            "query_status" => StatusSentence(inner),
+            "query_telemetry" or "query_skill" => "Cevap aşağıda (Ayrıntı).",
+            "mech_param_change" or "elec_param_change" => "Tasarım değişikliğini hazırladım; üretime geçmeden önce onayın gerekir.",
+            _ => "Tamam.",
+        };
+    }
+
+    /// <summary>The status row as a sentence: what ran, what waits, what the lab is evolving.</summary>
+    private static string StatusSentence(JsonElement? inner)
+    {
+        if (inner is not { ValueKind: JsonValueKind.Object } r || !r.TryGetProperty("rows", out var rows)
+            || rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() == 0)
+        {
+            return "Durum bilgisi alamadım.";
+        }
+
+        var row = rows[0];
+        int N(string group, string key) =>
+            row.TryGetProperty(group, out var g) && g.ValueKind == JsonValueKind.Object
+            && g.TryGetProperty(key, out var v) && v.TryGetInt32(out var n) ? n : 0;
+        int Sum(string group) =>
+            row.TryGetProperty(group, out var g) && g.ValueKind == JsonValueKind.Object
+                ? g.EnumerateObject().Sum(x => x.Value.TryGetInt32(out var n) ? n : 0)
+                : 0;
+
+        var parts = new List<string>
+        {
+            $"Son 24 saatte {N("tasks_last_24h", "succeeded")} görev tamamlandı, {N("tasks_last_24h", "running")} çalışıyor, {N("tasks_last_24h", "queued")} sırada bekliyor.",
+            N("campaigns", "active") > 0
+                ? $"{N("campaigns", "active")} evrim kampanyası sürüyor."
+                : "Şu an sürmekte olan evrim kampanyası yok.",
+        };
+        parts.Add(Sum("approvals_waiting") > 0
+            ? $"Senin onayını bekleyen {Sum("approvals_waiting")} şey var (Onaylar ekranı)."
+            : "Onay bekleyen bir şey yok.");
+        parts.Add(Sum("robots") > 0 ? $"{Sum("robots")} robot kayıtlı." : "Henüz bağlı robot yok; her şey simülasyonda.");
+        return string.Join(' ', parts);
+    }
+
+    private static JsonElement? Child(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Object
+            ? v
+            : null;
+
+    private static string? Field(JsonElement? element, string name) =>
+        element is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null
+            ? v.ValueKind == JsonValueKind.String ? v.GetString() : v.ToString()
+            : null;
+}

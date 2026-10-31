@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Request a deployment gate change (NEML_SPEC.md SS5.2). Levels >= 1 are only
+# granted against an approval token minted by the approval flow; the server
+# verifies the token, the caller cannot bypass it.
+
+uint8 LEVEL_SIM=0            # automatic, no approval
+uint8 LEVEL_BENCH=1          # wheels up, 30% power, human present   [APPROVAL]
+uint8 LEVEL_TETHERED=2       # bounded area, e-stop in hand          [APPROVAL]
+uint8 LEVEL_FREE=3           # free running                         [APPROVAL]
+uint8 LEVEL_MANUFACTURE=4    # print / PCB order / firmware flash    [APPROVAL]
+
+uint8 level                  # requested level, one of LEVEL_*
+string approval_token        # approval record token; empty is only valid for LEVEL_SIM
+string requested_by          # operator or service account id, for the audit trail
+---
+bool accepted                # true when the level was granted
+uint8 effective_level        # level in force after the call, one of LEVEL_*
+string message               # human readable reason when accepted is false

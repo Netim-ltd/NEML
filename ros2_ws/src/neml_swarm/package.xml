@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>neml_swarm</name>
+  <version>0.1.0</version>
+  <description>Faz 5 swarm koordinasyonu: kiralama (lease) ile gorev sahipligi ve dusen robotun isinin devri (T-082), baglanti kaybinda 2 s icinde guvenli duruma gecis (T-083).</description>
+  <maintainer email="mustafa.gulsoy@neml.local">Mustafa Gulsoy</maintainer>
+  <license>AGPL-3.0-or-later</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>neml_msgs</depend>
+  <exec_depend>python3-cryptography</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>launch</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <!-- neml_bringup is used by the launch tests but cannot be declared: bringup
+       exec_depends on this package and colcon rejects the cycle. Build the whole
+       workspace before colcon test. -->
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

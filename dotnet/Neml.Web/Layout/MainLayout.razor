@@ -1,0 +1,181 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject TokenStore Tokens
+@inject ApiClient Api
+@inject LiveClient Live
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+@if (!ready)
+{
+    <div class="boot">Yükleniyor…</div>
+}
+else if (Tokens.IsAuthenticated && Nav.ToBaseRelativePath(Nav.Uri).StartsWith("asistan", StringComparison.Ordinal))
+{
+    <Assistant Standalone="true" />
+}
+else
+{
+    <a class="skip-link" href="@(Nav.Uri.Split('#')[0] + "#main")">Ana içeriğe geç</a>
+    <div class="shell @(Tokens.IsAuthenticated ? "signed-in" : "")">
+        @if (Tokens.IsAuthenticated)
+        {
+            <div class="mobilebar">
+                <button class="menu-btn ghost" type="button" aria-label="@(navOpen ? "Menüyü kapat" : "Menüyü aç")" aria-expanded="@navOpen" aria-controls="sidenav" @onclick="() => navOpen = !navOpen">
+                    <Icon Name="@(navOpen ? "close" : "menu")" />
+                </button>
+                <span class="brand">NEML</span>
+                @if (pending > 0)
+                {
+                    <a class="spacer link" href="onaylar" style="text-align:right">@pending bekleyen onay</a>
+                }
+            </div>
+            <div class="scrim @(navOpen ? "open" : "")" @onclick="() => navOpen = false" aria-hidden="true"></div>
+            <nav id="sidenav" class="sidenav @(navOpen ? "open" : "")" aria-label="Ana menü">
+                <div class="brand">
+                    <div>NEML<small>Kendi kendini geliştiren laboratuvar</small></div>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-title">Genel</span>
+                    <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="home" />Panel</NavLink>
+                    <NavLink class="nav-item" href="onaylar">
+                        <Icon Name="approval" />Onaylar
+                        @if (pending > 0)
+                        {
+                            <span class="badge" role="status" aria-label="@pending bekleyen onay">@pending</span>
+                        }
+                    </NavLink>
+                    <NavLink class="nav-item" href="gorevler"><Icon Name="tasks" />Görevler</NavLink>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-title">Laboratuvar</span>
+                    <NavLink class="nav-item" href="beyin"><Icon Name="brain" />Beyin</NavLink>
+                    <NavLink class="nav-item" href="ogrenme"><Icon Name="learn" />Öğrenme</NavLink>
+                    <NavLink class="nav-item" href="evrim"><Icon Name="box" />Modeller</NavLink>
+                    <NavLink class="nav-item" href="genom"><Icon Name="genome" />Soy ağacı</NavLink>
+                    <NavLink class="nav-item" href="yetenekler"><Icon Name="skill" />Yetenekler</NavLink>
+                    <NavLink class="nav-item" href="uretim"><Icon Name="factory" />Üretim</NavLink>
+                </div>
+
+                <div class="nav-group">
+                    <span class="nav-title">Bağlantılar</span>
+                    <NavLink class="nav-item" href="model-erisimi"><Icon Name="key" />Model erişimi</NavLink>
+                    <NavLink class="nav-item" href="bot"><Icon Name="bot" />Bot hesapları</NavLink>
+                    <NavLink class="nav-item" href="loglar"><Icon Name="logs" />Kayıtlar</NavLink>
+                </div>
+
+                <div class="nav-foot">
+                    <span class="live-state" role="status"><span class="dot @(Live.IsConnected ? "ok" : "bad")"></span>@(Live.IsConnected ? "Canlı bağlantı var" : "Canlı bağlantı yok")</span>
+                    <NavLink class="nav-item" href="ayarlar"><Icon Name="settings" />Ayarlar</NavLink>
+                    <button class="nav-item" type="button" @onclick="CycleThemeAsync" aria-label="Görünümü değiştir, şu an: @ThemeText">
+                        <Icon Name="@(theme == "light" ? "sun" : "moon")" />Görünüm: @ThemeText
+                    </button>
+                    <button class="nav-item" type="button" @onclick="SignOutAsync"><Icon Name="logout" />Çıkış yap</button>
+                </div>
+            </nav>
+        }
+        <main id="main" tabindex="-1">@Body</main>
+        @if (Tokens.IsAuthenticated)
+        {
+            <Assistant />
+        }
+    </div>
+}
+
+@code {
+    private bool ready;
+    private bool navOpen;
+    private string theme = "auto";
+    private string ThemeText => theme switch { "light" => "açık", "dark" => "koyu", _ => "sistem" };
+    private int pending;
+    private IDisposable?[] subscriptions = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Tokens.LoadAsync();
+        ready = true;
+        Nav.LocationChanged += CloseDrawer;
+
+        if (!Tokens.IsAuthenticated)
+        {
+            GoToLogin();
+            return;
+        }
+
+        subscriptions =
+        [
+            Live.Hub.On<object>("ApprovalRequested", _ => RefreshPendingAsync()),
+            Live.Hub.On<object>("ApprovalDecided", _ => RefreshPendingAsync()),
+        ];
+
+        await RefreshPendingAsync();
+
+        try
+        {
+            await Live.EnsureStartedAsync();
+        }
+        catch (Exception)
+        {
+            // The badge and pages still work over REST when the hub is unreachable.
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task RefreshPendingAsync()
+    {
+        try
+        {
+            pending = (await Api.GetPendingApprovalsAsync())?.Length ?? 0;
+        }
+        catch (HttpRequestException)
+        {
+            pending = 0;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { theme = await Js.InvokeAsync<string>("nemlTheme.choice"); StateHasChanged(); }
+            catch (JSException) { /* theme.js missing: the system setting stays */ }
+        }
+    }
+
+    private void CloseDrawer(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        navOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task CycleThemeAsync()
+    {
+        theme = theme switch { "auto" => "light", "light" => "dark", _ => "auto" };
+        try { await Js.InvokeAsync<string>("nemlTheme.set", theme); }
+        catch (JSException) { /* ignore */ }
+    }
+
+    private async Task SignOutAsync()
+    {
+        await Tokens.SignOutAsync();
+        GoToLogin();
+    }
+
+    private void GoToLogin() => Nav.NavigateTo("giris", forceLoad: false, replace: true);
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= CloseDrawer;
+        foreach (var subscription in subscriptions)
+        {
+            subscription?.Dispose();
+        }
+    }
+}

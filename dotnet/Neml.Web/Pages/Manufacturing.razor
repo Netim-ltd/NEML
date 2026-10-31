@@ -1,0 +1,163 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/uretim"
+@inject ApiClient Api
+
+<PageTitle>Üretim — NEML</PageTitle>
+
+<PageHeader Title="Üretim" Help="Baskı kuyruğu ve yazıcılar. Gerçek baskı her zaman senin onayını bekler." />
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+@if (notice is not null)
+{
+    <p class="ok" role="status">@notice</p>
+}
+
+@if (printer is not null)
+{
+    <section class="card">
+        <header>
+            <h2>Yazıcı @printer.PrinterId</h2>
+            <span class="state @(printer.Online ? "running" : "offline")">@(printer.Online ? printer.State : "çevrimdışı")</span>
+        </header>
+        <dl>
+            <dt>Nozul</dt><dd>@(printer.NozzleC?.ToString("0.#") ?? "—") °C</dd>
+            <dt>Yatak</dt><dd>@(printer.BedC?.ToString("0.#") ?? "—") °C</dd>
+            <dt>İlerleme</dt><dd>@(printer.Pct?.ToString("0") ?? "—") %</dd>
+        </dl>
+        <div class="bar"><span style="width:@($"{printer.Pct ?? 0:0}%")"></span></div>
+    </section>
+}
+
+<section class="card">
+    <h2>Baskı kuyruğu</h2>
+    @if (jobs.Length == 0)
+    {
+        <p class="muted">Baskı işi yok.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>İş</th><th>Profil</th><th>Süre</th><th>Filament</th><th>Maliyet</th><th>Durum</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var j in jobs)
+                {
+                    <tr>
+                        <td class="muted">@j.Id.ToString()[..8]</td>
+                        <td>@j.ProfileId</td>
+                        <td>@(j.EstTimeH?.ToString("0.#") ?? "—") sa</td>
+                        <td>@(j.EstFilamentG?.ToString("0") ?? "—") g</td>
+                        <td>@(j.EstCostTry?.ToString("0.00") ?? "—") ₺</td>
+                        <td><span class="state">@j.State</span></td>
+                        <td class="actions">
+                            @if (j.State is "queued" or "printing")
+                            {
+                                <button class="danger" @onclick="() => CancelAsync(j)">İptal</button>
+                            }
+                            @if (j.State == "done" && j.Qc is null)
+                            {
+                                <button @onclick="() => qcJob = j">Kalite kontrol</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+@if (qcJob is not null)
+{
+    <section class="card" aria-label="Kalite kontrol formu">
+        <h2>Kalite kontrol — @qcJob.Id.ToString()[..8]</h2>
+        <p class="muted">§12.5: 3 kritik boyut (kumpas), kütle (terazi), çarpılma, delik mastarı, katman yapışması.</p>
+        @for (var i = 0; i < 3; i++)
+        {
+            var n = i;
+            <div class="grid">
+                <label>Boyut @(n + 1) nominal (mm)<input @bind="nominal[n]" inputmode="decimal" /></label>
+                <label>Boyut @(n + 1) ölçülen (mm) @Verdict(ViewLogic.DimOk(ViewLogic.Number(dim[n]), ViewLogic.Number(nominal[n])))<input @bind="dim[n]" inputmode="decimal" /></label>
+            </div>
+        }
+        <div class="grid">
+            <label>Kütle nominal (g)<input @bind="massNominal" inputmode="decimal" /></label>
+            <label>Kütle ölçülen (g) @Verdict(ViewLogic.MassOk(ViewLogic.Number(mass), ViewLogic.Number(massNominal)))<input @bind="mass" inputmode="decimal" /></label>
+            <label>Çarpılma (mm) @Verdict(ViewLogic.WarpOk(ViewLogic.Number(warp)))<input @bind="warp" inputmode="decimal" /></label>
+        </div>
+        <label><input type="checkbox" @bind="holeOk" style="display:inline;width:auto" /> Delik mastarı geçti</label>
+        <label><input type="checkbox" @bind="adhesionOk" style="display:inline;width:auto" /> Katman yapışması iyi</label>
+        <div class="actions">
+            <button class="primary" @onclick="SubmitQcAsync" disabled="@(!FormComplete)">Gönder</button>
+            <button class="ghost" @onclick="() => qcJob = null">Vazgeç</button>
+        </div>
+    </section>
+}
+
+@code {
+    private PrintJob[] jobs = [];
+    private PrinterStatus? printer;
+    private PrintJob? qcJob;
+    private string? error, notice;
+    private readonly string[] dim = ["", "", ""];
+    private readonly string[] nominal = ["", "", ""];
+    private string mass = "", massNominal = "", warp = "";
+    private bool holeOk, adhesionOk;
+
+    private bool FormComplete =>
+        dim.Concat(nominal).Append(mass).Append(massNominal).Append(warp).All(t => ViewLogic.Number(t) is not null);
+
+    private static MarkupString Verdict(bool? ok) =>
+        ok is null ? default : new MarkupString(ok.Value ? "<span class=\"ok\">geçer</span>" : "<span class=\"bad\">kalır</span>");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            jobs = await Api.GetPrintJobsAsync();
+            var id = jobs.FirstOrDefault()?.PrinterId;
+            if (id is not null)
+            {
+                printer = await Api.GetPrinterStatusAsync(id);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            error = "Üretim verisi alınamadı.";
+        }
+    }
+
+    private async Task CancelAsync(PrintJob job)
+    {
+        error = notice = null;
+        try
+        {
+            (await Api.CancelPrintAsync(job.Id, "web")).EnsureSuccessStatusCode();
+            notice = "İptal komutu lab kuyruğuna alındı. Yazıcıyı fiziksel olarak kesmek akıllı prizin işidir (§5.1).";
+        }
+        catch (HttpRequestException)
+        {
+            error = "İptal isteği reddedildi.";
+        }
+    }
+
+    private async Task SubmitQcAsync()
+    {
+        error = notice = null;
+        double N(string t) => ViewLogic.Number(t)!.Value;
+        var form = new QcForm(N(dim[0]), N(dim[1]), N(dim[2]), N(nominal[0]), N(nominal[1]), N(nominal[2]),
+            N(mass), N(massNominal), N(warp), holeOk, adhesionOk);
+        try
+        {
+            (await Api.SubmitQcAsync(qcJob!.Id, form)).EnsureSuccessStatusCode();
+            notice = "Kalite kontrol formu lab kuyruğuna alındı.";
+            qcJob = null;
+        }
+        catch (HttpRequestException)
+        {
+            error = "Form gönderilemedi.";
+        }
+    }
+}

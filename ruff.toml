@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Repo-wide ruff settings. Without this file every Python tree outside brain/
+# (mcp_servers/, scripts/, docker/, ...) was linted under ruff's ambient
+# defaults, which drift between releases. brain/pyproject.toml carries the same
+# block and keeps winning for brain/ because it sits closer to the files.
+
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S101"]  # assert is the point of a test

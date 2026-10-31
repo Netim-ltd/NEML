@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Run one validated skill from the skill library. Parameters arrive as JSON
+# produced by constrained generation (NEML_SPEC.md SS4.3): the model fills a
+# schema, it never emits code, and the payload is schema-validated before the
+# goal is sent.
+
+string skill_id              # skill library id, e.g. "gait_trot_v3"
+string params_json           # skill parameters as a JSON object, schema-validated
+float64 timeout_s            # abort after this many seconds; must be > 0
+---
+bool success                 # true when the skill reached its goal
+string result_json           # measured outcome as a JSON object
+float64 duration_s           # execution time, seconds
+string failure_reason        # empty when success is true
+---
+float64 progress             # completion fraction, 0.0 .. 1.0 (dimensionless)
+string phase                 # current phase name, free text for the operator UI

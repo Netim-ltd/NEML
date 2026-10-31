@@ -1,0 +1,139 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/gorevler/{Id:guid}"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveClient Live
+
+<PageTitle>Görev — NEML</PageTitle>
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (task is null)
+{
+    <p class="muted">Yükleniyor…</p>
+}
+else
+{
+    <h1>@task.Title</h1>
+    <p class="muted">
+        @TaskList.KindLabel(task.Kind) · @task.State · öncelik @task.Priority.ToString("0.###")
+        · robot @(task.RobotId ?? "—") · kaynak @task.Source
+    </p>
+
+    <div class="bar">
+        <span style="width:@($"{task.Progress * 100:0}%")" class="ok"></span>
+    </div>
+
+    <section class="card">
+        <h2>Spec</h2>
+        <pre>@Pretty(task.Spec)</pre>
+    </section>
+
+    @if (task.Result is not null)
+    {
+        <section class="card">
+            <h2>Sonuç</h2>
+            <pre>@Pretty(task.Result)</pre>
+        </section>
+    }
+
+    <section class="card">
+        <h2>Koşu geçmişi</h2>
+        @if (runs.Length == 0)
+        {
+            <p class="muted">Koşu yok.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr><th>#</th><th>Ortam</th><th>Seed</th><th>Başlangıç</th><th>Süre</th><th>Sonuç</th><th>rosbag</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var run in runs.OrderByDescending(r => r.Attempt))
+                    {
+                        <tr>
+                            <td>@run.Attempt</td>
+                            <td>@run.Env</td>
+                            <td>@(run.Seed?.ToString() ?? "—")</td>
+                            <td>@run.StartedAt.ToLocalTime().ToString("dd.MM HH:mm")</td>
+                            <td>@Duration(run)</td>
+                            <td>@(run.Outcome ?? "—")</td>
+                            <td>@(run.RosbagPath ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    @if (task.State is "queued" or "planning" or "awaiting_approval" or "running" or "paused")
+    {
+        <button class="danger" @onclick="CancelAsync">Görevi iptal et</button>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private TaskItem? task;
+    private TaskRun[] runs = [];
+    private string? error;
+    private IDisposable? subscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        subscription = Live.Hub.On<TaskUpdatedEvent>("TaskUpdated", e =>
+        {
+            if (task is null || e.TaskId != Id)
+            {
+                return Task.CompletedTask;
+            }
+
+            task = task with { State = e.State, Progress = e.Progress };
+            return InvokeAsync(StateHasChanged);
+        });
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            task = await Api.GetTaskAsync(Id);
+            runs = await Api.GetTaskRunsAsync(Id) ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            error = "Görev alınamadı.";
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        try
+        {
+            await Api.CancelTaskAsync(Id);
+            await LoadAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Görev iptal edilemedi.";
+        }
+    }
+
+    private static string Pretty(System.Text.Json.JsonElement? element) => element is null
+        ? "null"
+        : System.Text.Json.JsonSerializer.Serialize(element.Value, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+    private static string Duration(TaskRun run) =>
+        run.EndedAt is null ? "—" : $"{(run.EndedAt.Value - run.StartedAt).TotalSeconds:0} sn";
+
+    public void Dispose() => subscription?.Dispose();
+}

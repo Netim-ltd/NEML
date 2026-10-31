@@ -1,0 +1,31 @@
+NEML - Networked Evolutionary Machine Laboratory
+Copyright (c) 2026 Mustafa Gulsoy.
+Source: https://github.com/Netim-ltd/NEML
+
+NEML is free software under the GNU Affero General Public License v3.0 or later
+(see LICENSE). The following additional terms are granted under AGPL section 7
+and apply to every copy and every modified version:
+
+1. Attribution (section 7(b)). You must keep this NOTICE file and the copyright
+   headers in the source. Any product, service, paper or public page that uses
+   NEML, or a work based on it, must state that it is "based on NEML by Mustafa
+   Gulsoy" and link to the original repository. Where there is a user interface,
+   the statement must be reachable from its about / legal page.
+
+2. Modified versions (section 7(c)). A modified version must be marked as such
+   and must not be presented as the original NEML.
+
+3. Trademarks (section 7(e)). The name "NEML" and its logo are not licensed for
+   use as the name of a modified version or of a product built on it. Saying
+   truthfully that a product is "based on NEML" (point 1) is allowed.
+
+4. Source of what you run. Commercial use is allowed. If you run NEML or a
+   modified version for others - including as a network service - you must offer
+   those users the complete corresponding source of the version you run,
+   under this same license (AGPL section 13). This covers your changes, the
+   designs, recipes, rules and code your fork adds to the software. It does not
+   cover your customers' data, or separate programs that only talk to NEML over
+   its public API.
+
+Third-party tools (FreeCAD, gmsh, Gazebo, ROS 2, vLLM, PostgreSQL ...) keep their
+own licenses and are run as separate processes.

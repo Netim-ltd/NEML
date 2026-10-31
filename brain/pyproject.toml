@@ -1,0 +1,95 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "neml-brain"
+version = "0.1.0"
+description = "NEML lab brain - FastAPI + LangGraph orchestration (SPEC section 8)"
+requires-python = ">=3.12,<3.13"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Mustafa Gulsoy" }]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic",
+    "asyncpg",
+    "langgraph",
+    "langgraph-checkpoint-postgres",
+    "psycopg[binary]>=3.2",  # libpq for the LangGraph checkpointer; the slim image has none
+    "apscheduler",
+    "httpx",
+    "pydantic>=2",
+    "pydantic-settings",
+    "structlog",
+    "prometheus-client",
+    "pyyaml",
+    "jsonschema",
+    "websockets",
+    "numpy",
+    "pillow",
+    "scipy",
+    "typer",
+    "rich",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "testcontainers[postgres]",
+    "ruff==0.16.7",
+    "mypy==2.3.1",
+    "bandit==1.9.4",
+    "types-PyYAML",
+    "types-jsonschema",
+]
+
+[project.scripts]
+nemlctl = "neml_brain.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["neml_brain"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert is the point of a test
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# APScheduler ships no py.typed marker and has no stub package.
+[[tool.mypy.overrides]]
+module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# The documented command is `pytest brain -q`; CI runs `pytest -q -m "not integration"`.
+# Making the default match CI keeps the integration tests (live Docker, live
+# PostgreSQL) out of both. Run them with `pytest -m integration`.
+addopts = "-m 'not integration'"
+markers = [
+    "regression: sim regression suite, runs on every PR (SPEC 18.1)",
+    "integration: needs testcontainers/postgres",
+]
+
+[tool.coverage.run]
+source = ["neml_brain"]
+
+[tool.coverage.report]
+fail_under = 80

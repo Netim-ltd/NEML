@@ -1,0 +1,12 @@
+{
+  "tenant": "example-firm",
+  "domain": "field",
+  "operation": "maintenance-triage",
+  "source": "robot_feedback",
+  "transport": "control_api",
+  "quantization": "nf4",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "base_revision": "REPLACE_WITH_40_CHARACTER_HUGGINGFACE_COMMIT_SHA",
+  "dataset": "tenants/example-firm/domains/field/datasets/maintenance-triage.jsonl",
+  "output": "tenants/example-firm/domains/field/models/maintenance-triage"
+}

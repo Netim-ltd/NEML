@@ -1,0 +1,145 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md 6.1 - config for externally installed MCP servers. No code here.
+#
+# WARNING: every `repo` below comes from pre-May-2026 knowledge. Open each one in
+# a browser and verify it before installing. A dead or abandoned repo means you
+# write the server yourself against the SPEC 6.2 spec - the architecture expects
+# that fallback. A server with `verified: null` is not installed.
+#
+# Transport is Streamable HTTP for every server (SPEC 6.2). Secrets are
+# ${ENV_VAR} references only (SPEC 5.4).
+
+servers:
+  freecad:
+    spec: "6.1 #1"
+    repo: "github.com/neka-nat/freecad-mcp"
+    confidence: medium
+    action: "verify -> install"
+    verified: null
+    port: 9104 # shared with our own neml-mcp-cad fallback; only one runs
+    transport: streamable-http
+    env:
+      FREECADCMD_BIN: /usr/bin/freecadcmd
+    notes: "LGPL tool, separate process (SPEC 1.3). Fallback: mcp_servers/neml_mcp_cad."
+
+  kicad:
+    spec: "6.1 #2"
+    repo: "github.com/lamaalrajih/kicad-mcp"
+    confidence: medium
+    action: "verify -> install"
+    verified: null
+    port: 9105
+    transport: streamable-http
+    env:
+      KICAD_CLI_BIN: /usr/bin/kicad-cli
+    notes: "GPL-3.0 tool, separate process only (SPEC 1.3). Scope limited by SPEC 13.1."
+
+  ros2:
+    spec: "6.1 #3"
+    repo: "github.com/lpigeon/ros-mcp-server"
+    confidence: medium
+    action: "verify -> evaluate"
+    verified: null
+    port: null # not in SPEC 6.5 client config; add only if adopted
+    transport: streamable-http
+    env:
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_zenoh_cpp
+    notes: "Evaluate only. ros_gz bridge already covers the sim path (T-034)."
+
+  postgres:
+    spec: "6.1 #4"
+    repo: "github.com/crystaldba/postgres-mcp"
+    confidence: medium-high
+    action: "verify -> install"
+    verified: null
+    port: 9106
+    transport: streamable-http
+    role: readonly # SPEC 6.1 #4 - READ-ONLY role, no exceptions
+    env:
+      DATABASE_URL: ${NEML_DB_URL_READONLY}
+    required_grants: # run scripts/db/ role setup before starting the server
+      - "CREATE ROLE neml_ro LOGIN PASSWORD '...'"
+      - "GRANT CONNECT ON DATABASE neml_local TO neml_ro"
+      - "GRANT USAGE ON SCHEMA public TO neml_ro"
+      - "GRANT SELECT ON ALL TABLES IN SCHEMA public TO neml_ro"
+      - "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO neml_ro"
+    fallback: mcp_servers/neml_mcp_pg # SPEC 6.2, in this tree, runs as compose service mcp-pg
+    notes: "Write access is refused by the GRANT, not by the client. db.write_raw is forbidden (SPEC 5.4).
+      Port 9106 is served by our own neml-mcp-pg unless this upstream one is verified and installed."
+
+  filesystem:
+    spec: "6.1 #5"
+    repo: "github.com/modelcontextprotocol/servers -> src/filesystem"
+    confidence: high
+    action: install
+    verified: null
+    port: 9107
+    transport: streamable-http
+    allowed_paths: # SPEC 6.5 - these two and nothing else
+      - /srv/neml/work
+      - /srv/neml/artifacts
+    fallback: mcp_servers/neml_mcp_fs # SPEC 6.2, in this tree, runs as compose service mcp-fs
+    notes: "Client re-checks path arguments against this list (brain/neml_brain/mcp/client.py).
+      Port 9107 is served by our own neml-mcp-fs unless this upstream one is verified and installed."
+
+  git:
+    spec: "6.1 #6"
+    repo: "github.com/modelcontextprotocol/servers -> src/git"
+    confidence: high
+    action: install
+    verified: null
+    port: 9108
+    transport: streamable-http
+    repository: /srv/neml/work/repo
+    fallback: mcp_servers/neml_mcp_git # SPEC 6.2, in this tree, runs as compose service mcp-git
+    notes: "Read + commit inside the work repo only. Never the deployment tree.
+      Port 9108 is served by our own neml-mcp-git unless this upstream one is verified and installed."
+
+  fetch:
+    spec: "6.1 #7"
+    repo: "github.com/modelcontextprotocol/servers -> src/fetch"
+    confidence: high
+    action: "install (allowlist only)"
+    verified: null
+    port: 9109
+    transport: streamable-http
+    allowlist_only: true # SPEC 6.1 #7 - anything not listed is refused
+    allowlist:
+      - docs.ros.org
+      - gazebosim.org
+      - wiki.freecad.org
+      - docs.kicad.org
+      - help.prusa3d.com
+      - docs.vllm.ai
+      - www.postgresql.org
+      - en.wikipedia.org
+      - arxiv.org
+      - raw.githubusercontent.com
+      - emanual.robotis.com
+      - api.github.com
+    fallback: mcp_servers/neml_mcp_fetch # in this tree, runs as compose service mcp-fetch
+    notes: "Fetched content is untrusted input; it reaches prompts only inside <untrusted_data> (SPEC 5.4).
+      Port 9109 is served by our own neml-mcp-fetch (allowlist, per-hop redirect re-check, text only)."
+
+  docker:
+    spec: "6.1 #8"
+    repo: "github.com/ckreiling/mcp-server-docker"
+    confidence: low-medium
+    action: "verify -> otherwise write our own"
+    verified: null
+    port: null
+    transport: streamable-http
+    notes: "Only the vLLM container start/stop is needed (SPEC 4.5); GpuLock already does that over the Docker socket."
+
+  openscad:
+    spec: "6.1 #9"
+    repo: "github.com/jhacksman/OpenSCAD-MCP-Server"
+    confidence: low
+    action: "verify -> optional"
+    verified: null
+    port: null
+    transport: streamable-http
+    notes: "Optional. FreeCAD is the parametric CAD decision (SPEC 2); do not adopt without a reason."

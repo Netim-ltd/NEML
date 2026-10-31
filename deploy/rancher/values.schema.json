@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "existingSecret", "external", "persistence", "edgeIngress"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "not": {"pattern": "(\\.invalid/|replace-me/)"}
+        },
+        "tag": {"type": "string", "minLength": 1}
+      }
+    },
+    "existingSecret": {"type": "string", "minLength": 1},
+    "external": {
+      "type": "object",
+      "required": ["vllmUrl", "embedUrl", "mcp"],
+      "properties": {
+        "vllmUrl": {"type": "string", "pattern": "^https?://"},
+        "embedUrl": {"type": "string", "pattern": "^https?://"},
+        "mcp": {
+          "type": "object",
+          "required": ["freecad", "kicad", "sim", "fab", "genome", "postgres", "filesystem", "git", "blender"],
+          "properties": {
+            "freecad": {"type": "string", "pattern": "^https?://"},
+            "kicad": {"type": "string", "pattern": "^https?://"},
+            "sim": {"type": "string", "pattern": "^https?://"},
+            "fab": {"type": "string", "pattern": "^https?://"},
+            "genome": {"type": "string", "pattern": "^https?://"},
+            "postgres": {"type": "string", "pattern": "^https?://"},
+            "filesystem": {"type": "string", "pattern": "^https?://"},
+            "git": {"type": "string", "pattern": "^https?://"},
+            "blender": {"type": "string", "pattern": "^https?://"}
+          }
+        }
+      }
+    },
+    "edgeIngress": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "className": {"type": "string"},
+        "host": {"type": "string"},
+        "tlsSecretName": {"type": "string"}
+      },
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {
+        "properties": {
+          "host": {"minLength": 4},
+          "tlsSecretName": {"minLength": 1}
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "required": ["size"],
+      "properties": {"size": {"type": "string", "minLength": 2}}
+    }
+  }
+}

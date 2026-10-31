@@ -1,0 +1,93 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/ayarlar"
+@inject ApiClient Api
+@inject TokenStore Tokens
+@inject NavigationManager Nav
+
+<PageTitle>Ayarlar — NEML</PageTitle>
+
+<PageHeader Title="Ayarlar" Help="Görünüm, bağlı cihazlar ve oturum." />
+
+@if (error is not null)
+{
+    <Notice Kind="bad">@error</Notice>
+}
+
+<section class="card" aria-labelledby="theme-title">
+    <h2 id="theme-title">Görünüm</h2>
+    <div class="actions" role="group" aria-label="Tema">
+        <button type="button" class="@(theme == "auto" ? "primary" : "ghost")" aria-pressed="@(theme == "auto")" @onclick='() => SetThemeAsync("auto")'>Sistem</button>
+        <button type="button" class="@(theme == "light" ? "primary" : "ghost")" aria-pressed="@(theme == "light")" @onclick='() => SetThemeAsync("light")'>Açık</button>
+        <button type="button" class="@(theme == "dark" ? "primary" : "ghost")" aria-pressed="@(theme == "dark")" @onclick='() => SetThemeAsync("dark")'>Koyu</button>
+    </div>
+    <p class="hint">"Sistem" cihazının açık/koyu ayarını izler. Seçimin bu tarayıcıda hatırlanır.</p>
+</section>
+
+<section class="card">
+    <h2>Sunucu</h2>
+    <p>@Nav.BaseUri</p>
+    <p class="muted">Web arayüzü API ile aynı kaynaktan sunulur; sunucu adresi değiştirilemez.</p>
+</section>
+
+<section class="card">
+    <h2>Oturumlar ve cihazlar</h2>
+    @if (devices.Length == 0)
+    {
+        <EmptyState Title="Kayıtlı cihaz yok" Hint="Mobil uygulamayla giriş yaptığında cihazın burada listelenir." Icon="settings" />
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Platform</th><th>Son görülme</th></tr></thead>
+            <tbody>
+                @foreach (var d in devices)
+                {
+                    <tr><td>@d.Platform</td><td class="muted">@(d.LastSeen?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<button class="danger" type="button" @onclick="SignOutAsync">Çıkış yap</button>
+
+@code {
+    private Device[] devices = [];
+    private string? error;
+    private string theme = "auto";
+
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    private async Task SetThemeAsync(string value)
+    {
+        theme = value;
+        try { await Js.InvokeAsync<string>("nemlTheme.set", value); }
+        catch (JSException) { /* theme.js missing: nothing to apply */ }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) { return; }
+        try { theme = await Js.InvokeAsync<string>("nemlTheme.choice"); StateHasChanged(); }
+        catch (JSException) { /* keep the system choice */ }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            devices = await Api.GetDevicesAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Cihaz listesi alınamadı.";
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        await Tokens.SignOutAsync();
+        Nav.NavigateTo("giris", replace: true);
+    }
+}

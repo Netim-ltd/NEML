@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The repo-root ruff.toml ignores S101 under `**/tests/**`. A ROS 2 package's
+# test directory is `test/`, singular - colcon looks for that name - so the
+# root ignore never matches and every assert in this package lints as a finding.
+# Same settings as the root file, one extra per-file-ignore.
+
+extend = "../../../ruff.toml"
+
+[lint.per-file-ignores]
+# assert is the point of a test, and these parse world files from this repo,
+# not untrusted input (the fleet never loads an SDF it did not generate).
+"test/**" = ["S101", "S314"]
+
+[lint.isort]
+# This directory contains launch/, so ruff's src heuristic would otherwise file
+# `launch` as first-party and split it from `launch.actions`. Both are ROS 2.
+known-third-party = ["launch", "launch_ros"]

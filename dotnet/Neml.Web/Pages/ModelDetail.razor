@@ -1,0 +1,231 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/evrim/{Name}"
+@implements IDisposable
+@inject ApiClient Api
+@inject AssistantState Assistant
+@using System.Net.Http.Json
+@using System.Text.Json
+
+<PageTitle>@Name — NEML</PageTitle>
+
+<p><a class="link" href="evrim">← Modeller ve robotlar</a></p>
+<h1>@Name</h1>
+@if (active is not null)
+{
+    <p class="muted">Aktif genom <code>@active.Id</code> · @(robots.Length == 0 ? "fiziksel robot yok, simülasyon modeli" : $"{robots.Length} robot")</p>
+}
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (viewId is not null && viewId != active?.Id)
+{
+    <section class="card">
+        <p><strong>Taslak tasarımı görüntülüyorsun:</strong> <code>@viewId</code>. Aktif tasarım değişmedi.</p>
+        <button class="ghost" @onclick="ShowActiveAsync">Aktif tasarıma dön</button>
+    </section>
+}
+
+<div class="tabs" role="tablist">
+    @foreach (var t in Tabs)
+    {
+        <button role="tab" class="@(t.Key == tab ? "active" : null)" @onclick="() => SelectTab(t.Key)">@t.Label</button>
+    }
+</div>
+
+@if (tab == "3d")
+{
+    @if (scene is { } s)
+    {
+        @* the key makes the viewer start over when a different design is shown *@
+        <ModelViewer @key="viewId" Scene="s" GenomeId="@viewId" OnDraft="ShowDraftAsync" />
+        <ImportedItems Scene="s" GenomeId="@viewId" OnDraft="ShowDraftAsync" />
+        <p class="muted">Basılı parçalar (bacak, ayak, gövde kabuğu, servo yuvaları, kart plakası, batarya yatağı) gerçek FreeCAD parçalarıdır; servolar, kartlar, batarya ve sensörler satın alınan parçaların yaklaşık ölçülü gösterimidir.</p>
+    }
+    else if (sceneMissing)
+    {
+        <p class="muted">Bu tasarımın 3B modeli henüz hazırlanmadı. Lab açılışta hazırlar; birkaç dakika sonra sayfayı yenile.</p>
+    }
+    else
+    {
+        <p class="muted">Yükleniyor…</p>
+    }
+}
+else if (tab == "bom")
+{
+    @if (scene is { } s2)
+    {
+        <section class="card">
+            <h2>İç aksam ve malzeme listesi</h2>
+            <table>
+                <thead><tr><th>Parça</th><th>Adet</th><th>Teknik özellikler</th><th>Bağlantılar</th></tr></thead>
+                <tbody>
+                    @foreach (var group in s2.GetProperty("bom").EnumerateArray().GroupBy(r => r.GetProperty("group").GetString()))
+                    {
+                        <tr><th colspan="4">@group.Key</th></tr>
+                        @foreach (var row in group)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@row.GetProperty("part").GetString()</strong>
+                                    @if (row.GetProperty("estimated").GetBoolean())
+                                    {
+                                        <span class="state">tahmini</span>
+                                    }
+                                    <br /><span class="muted">@row.GetProperty("spec").GetString()</span>
+                                </td>
+                                <td>@row.GetProperty("qty").GetInt32()</td>
+                                <td>
+                                    <ul>
+                                        @foreach (var spec in row.GetProperty("specs").EnumerateArray())
+                                        {
+                                            <li>@spec.GetString()</li>
+                                        }
+                                    </ul>
+                                </td>
+                                <td>
+                                    @foreach (var link in row.GetProperty("links").EnumerateArray())
+                                    {
+                                        <a class="link" href="@link.GetProperty("url").GetString()" target="_blank" rel="noopener noreferrer">@link.GetProperty("label").GetString()</a>
+                                        <span class="muted">(@(link.GetProperty("kind").GetString() == "uretici" ? "üretici" : "arama"))</span>
+                                        <br />
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+            <p class="muted">
+                <strong>Önemli:</strong> teknik özellikler üreticinin yayımladığı verilerden ya da bu projenin genom/şablon değerlerinden gelir; sipariş vermeden önce üretici veri sayfasından doğrula.
+                "Üretici" bağlantısı ürünün resmî sayfasıdır, "arama" bağlantısı tam model adıyla mağaza aramasıdır (fiyat saklanmaz, çünkü değişir).
+                Bağlantı elemanlarının (vida, somun, mesafe pulu) sayıları tasarım varsayımıdır: CAD'de yalnızca 3,2 mm M3 boşluk deliği tanımlı, montaj tasarımı yapılınca kesinleşir.
+                CSV olarak indirmek için 3B tasarım sekmesindeki "Dışa aktar" düğmelerini kullan.
+            </p>
+        </section>
+    }
+    else
+    {
+        <p class="muted">Liste henüz hazır değil.</p>
+    }
+}
+else if (tab == "kart")
+{
+    @if (scene is { } boardScene)
+    {
+        <ImportedItems Scene="boardScene" Boards="true" />
+    }
+
+    <BoardStudio />
+}
+else if (IsImported)
+{
+    <section class="card">
+        <h3>Bu robot içe aktarılmış bir tasarım</h3>
+        <p>Simülasyon ve evrim, parametrik şablonlardan kurulan kendi dört ayaklı ailemiz içindir (bacak/ayak ölçüleri, servolar, kartlar). Başka bir deponun robotunun böyle ayarlanabilir parametreleri yok; o yüzden bu sekmeler burada kapalı.</p>
+        <p class="muted">Yapabileceklerin: 3B'de incele, eklemlerini oynat (poz), çarpışma ve denge denetimi yap, parçaları taşı, asistana sor, kartlarını indir.</p>
+    </section>
+}
+else if (tab == "sim")
+{
+    <SimPanel Model="@Name" IsDefault="@isDefault" />
+}
+else
+{
+    <section class="card">
+        <h3>Parametrik evrim kaldırıldı</h3>
+        <p>Robotları artık lab kendisi tasarlıyor (LLM + CAD MCP). Tasarımlar, ajan toplantıları ve eğitimler için <a class="link" href="ogrenme">Öğrenme</a> sayfasına bak.</p>
+    </section>
+}
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "view")] public string? View { get; set; }
+
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("3d", "3B tasarım"),
+        ("kart", "Kartlar"),
+        ("bom", "İç aksam / malzeme"),
+        ("sim", "Simülasyon"),
+    ];
+
+    // older scenes lack the flag: a robot with a joint tree and no body shell is an imported one
+    private bool IsImported => scene is { } s
+        && ((s.TryGetProperty("imported", out var imp) && imp.ValueKind == JsonValueKind.True)
+            || (s.TryGetProperty("rig", out var rig) && rig.ValueKind == JsonValueKind.Object && rig.GetProperty("joints").GetArrayLength() > 0
+                && !s.GetProperty("parts").EnumerateArray().Any(p => p.GetProperty("id").GetString() is "shell" or "shell_lower")));
+
+    private GenomeNode? active;
+    private Robot[] robots = [];
+    private JsonElement? scene;
+    private bool sceneMissing, isDefault;
+    private string tab = "3d";
+    private string? viewId;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        scene = null;
+        sceneMissing = false;
+        try
+        {
+            var tree = await Api.GetGenomeTreeAsync();
+            isDefault = tree.Select(n => n.Name).FirstOrDefault() == Name;
+            var nodes = tree.Where(n => n.Name == Name).SelectMany(Flatten).ToList();
+            active = nodes.FirstOrDefault(n => n.Status == "active") ?? nodes.LastOrDefault(n => n.Status is "draft" or "testing") ?? nodes.FirstOrDefault(); // a brand new model only has its draft
+            robots = (await Api.GetRobotsAsync() ?? []).Where(r => ModelList.ModelOf(r.GenomeId) == Name).ToArray();
+            if (active is null)
+            {
+                error = "Bu modelin aktif genomu yok.";
+                return;
+            }
+
+            viewId = View is { Length: > 0 } && nodes.Any(n => n.Id == View) ? View : active.Id;
+            await LoadSceneAsync();
+            Assistant.SetModel(viewId, Name, tab);
+        }
+        catch (HttpRequestException)
+        {
+            error = "Model bilgisi alınamadı.";
+        }
+    }
+
+    private async Task LoadSceneAsync()
+    {
+        scene = null;
+        sceneMissing = false;
+        scene = await Api.GetModelSceneAsync(viewId!);
+        sceneMissing = scene is null;
+    }
+
+    private async Task ShowDraftAsync(string draftId)
+    {
+        viewId = draftId;
+        tab = "3d";
+        await LoadSceneAsync();
+        Assistant.SetModel(viewId, Name, tab);
+        StateHasChanged();
+    }
+
+    private void SelectTab(string key)
+    {
+        tab = key;
+        Assistant.SetModel(viewId, Name, tab);
+    }
+
+    public void Dispose() => Assistant.SetModel(null, null, null);
+
+    private async Task ShowActiveAsync()
+    {
+        viewId = active!.Id;
+        await LoadSceneAsync();
+        Assistant.SetModel(viewId, Name, tab);
+    }
+
+    private static IEnumerable<GenomeNode> Flatten(GenomeNode n) =>
+        new[] { n }.Concat(n.Children.SelectMany(Flatten));
+}

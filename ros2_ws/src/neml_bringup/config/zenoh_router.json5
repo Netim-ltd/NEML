@@ -1,0 +1,104 @@
+// Copyright (c) 2026 Mustafa Gulsoy.
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// zenoh router configuration for rmw_zenoh_cpp (NEML_SPEC.md SS17.2).
+//
+// DEPLOY PATH: SS17.2 sets ZENOH_ROUTER_CONFIG_URI to
+// /srv/neml/config/zenoh_router.json5. This file is the source; the setup
+// scripts install or symlink it there. The launch files default the env var to
+// the deploy path and fall back to this one when it is not installed yet.
+//
+// TOPOLOGY (SS3): the lab station runs the one router. Every robot runs a
+// peer-mode session that connects to it over 5 GHz WiFi. Robots do not
+// multicast-discover each other: on a shared WiFi channel that is the fastest
+// way to spend all the airtime on discovery instead of telemetry, and T-081
+// asks for 30 minutes at under 1% packet loss with three robots.
+{
+  mode: "router",
+
+  // The lab station address. Setup replaces the host part; the port is the
+  // zenoh default and is deliberately left alone.
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+
+  // The router connects to nothing on its own; robots connect inward.
+  connect: {
+    endpoints: [],
+  },
+
+  scouting: {
+    // Multicast scouting off for the reason above. Robots are configured with
+    // the router endpoint instead.
+    multicast: {
+      enabled: false,
+    },
+    gossip: {
+      enabled: true,
+      multihop: false,
+    },
+  },
+
+  transport: {
+    unicast: {
+      // A robot that walked out of range must be declared dead fast enough
+      // that the T-083 two second budget is still meetable. 1 s lease with
+      // 4 keepalives gives a 250 ms probe and a 1 s verdict.
+      lease: 1000,
+      keep_alive: 4,
+      // Batching costs latency. The cmd class carries e-stop and safe-state
+      // traffic, so keep the batch small.
+      max_sessions: 32,
+    },
+    link: {
+      tx: {
+        // 1 kHz joint telemetry from three robots fits comfortably; raising
+        // this only hides a bandwidth problem behind a bigger buffer.
+        queue: {
+          size: {
+            control: 2,
+            real_time: 4,
+            interactive_high: 2,
+            interactive_low: 1,
+            data_high: 2,
+            data: 4,
+            data_low: 2,
+            background: 2,
+          },
+        },
+      },
+    },
+  },
+
+  // Cameras are the one stream that can saturate the link. SS17.2 already
+  // forbids raw frames on the swarm network; this is the second line of
+  // defence in case a node is ever misconfigured.
+  qos: {
+    publication: [
+      {
+        key_exprs: ["**/camera/**"],
+        config: {
+          congestion_control: "drop",
+          priority: "data_low",
+          express: false,
+        },
+      },
+      {
+        key_exprs: ["**/telemetry/**"],
+        config: {
+          congestion_control: "drop",
+          priority: "data",
+          express: false,
+        },
+      },
+      {
+        key_exprs: ["**/cmd/**", "**/state/**"],
+        config: {
+          congestion_control: "block",
+          priority: "real_time",
+          express: true,
+        },
+      },
+    ],
+  },
+}

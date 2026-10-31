@@ -1,0 +1,69 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/giris"
+@layout MainLayout
+@inject TokenStore Tokens
+@inject NavigationManager Nav
+
+<PageTitle>Giriş — NEML</PageTitle>
+
+<div class="login">
+    <h1>NEML</h1>
+    <p class="muted">Kendi kendini geliştiren laboratuvar. Devam etmek için hesabınla giriş yap.</p>
+
+    <div class="card">
+        <EditForm Model="form" OnValidSubmit="SubmitAsync" FormName="login">
+            @if (error is not null)
+            {
+                <Notice Kind="bad">@error</Notice>
+            }
+            <label for="login-email">
+                E-posta
+                <InputText id="login-email" @bind-Value="form.Email" type="email" autocomplete="username" inputmode="email" aria-invalid="@(error is not null ? "true" : null)" />
+            </label>
+            <label for="login-password">
+                Şifre
+                <InputText id="login-password" @bind-Value="form.Password" type="@(show ? "text" : "password")" autocomplete="current-password" aria-invalid="@(error is not null ? "true" : null)" />
+            </label>
+            <label><input type="checkbox" @bind="show" /> Şifreyi göster</label>
+            <button type="submit" disabled="@busy" aria-busy="@busy">@(busy ? "Giriş yapılıyor" : "Giriş yap")</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private readonly Credentials form = new();
+    private string? error;
+    private bool busy;
+    private bool show;
+
+    private async Task SubmitAsync()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await Tokens.SignInAsync(form.Email, form.Password);
+
+            // Full reload so the layout picks up the new session in one pass.
+            Nav.NavigateTo(string.Empty, forceLoad: true);
+        }
+        catch (HttpRequestException ex)
+        {
+            error = ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                ? "E-posta veya şifre hatalı."
+                : "Sunucuya ulaşılamadı.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private sealed class Credentials
+    {
+        public string Email { get; set; } = string.Empty;
+
+        public string Password { get; set; } = string.Empty;
+    }
+}

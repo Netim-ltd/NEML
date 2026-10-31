@@ -1,0 +1,65 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# NEML_SPEC.md 13.3 seed genome. Values verbatim; comments in English (SPEC 0.8).
+# The `limits` block is closed to evolution - see hardware/genome/README.md.
+# `created` is quoted so YAML keeps it a string: the schema types it as one.
+
+schema_version: 1
+genome_id: quadruped_v2
+hash: a3f91c7                      # derived from the content
+parent: quadruped_v1@8e2bd40
+created: "2026-02-08"
+status: active                     # draft | testing | active | deprecated
+
+morphology:
+  body_type: quadruped
+  leg_count: 4
+  dof_per_leg: 4
+  total_dof: 16
+
+mechanical:
+  material: PA6-CF
+  material_density_g_cm3: 1.17
+  body_mass_kg: 2.40               # MEASURED
+  body_mass_cad_kg: 2.31           # ESTIMATED
+
+electronics:
+  compute:           {model: raspberry_pi_5_8gb}
+  motion_controller: {model: stm32f446, firmware: firmware/stm32_motion@v1.4.2}
+  aux_mcu:           {model: esp32s3,   firmware: firmware/esp32_aux@v1.1.0}
+  safety_mcu:        {model: atmega328p,firmware: firmware/safety_watchdog@v1.0.3}
+  actuators: {model: sts3215, count: 16, stall_torque_nm: 2.9}
+  sensors:
+    - {type: imu,          model: bno085, rate_hz: 100}
+    - {type: depth_camera, model: realsense_d405, rate_hz: 15}
+    - {type: current,      model: ina226, count: 2}
+
+power:
+  battery: {chemistry: lipo, cells: 4, capacity_mah: 5200, c_rating: 25}
+  bms: required
+  rails:
+    - {v: 5.0, a_max: 5.0, converter: buck_5v5a}
+    - {v: 3.3, a_max: 2.0, converter: ldo_3v3}
+
+limits:                            # L4 CANNOT CHANGE THIS - enforced in code
+  joint_torque_nm_max: 2.5
+  joint_velocity_rads_max: 6.0
+  body_current_a_max: 20.0
+  body_temp_c_max: 70.0
+
+manufacturing:
+  print_time_h: 18.5
+  material_cost_try: 640
+  bom_cost_try: 9800               # updated after the first purchase
+  assembly_time_h: 4.0
+
+performance:                       # MEASURED, not simulated
+  max_speed_mps: 0.42
+  endurance_min: 34
+  mtbf_h: 11.2
+
+fitness:
+  score: 0.7140
+  campaign: campaign_003
+  weights_ref: retired            # the parametric evolution engine was removed

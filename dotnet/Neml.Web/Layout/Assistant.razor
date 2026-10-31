@@ -1,0 +1,234 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@implements IDisposable
+@inject AssistantState State
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+@if (!State.Open && !Standalone)
+{
+    <button class="assistant-fab" title="Asistan" aria-label="Asistanı aç" @onclick="OpenAsync">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+            <circle cx="9" cy="12" r=".6" fill="currentColor" /><circle cx="13" cy="12" r=".6" fill="currentColor" /><circle cx="17" cy="12" r=".6" fill="currentColor" />
+        </svg>
+        @if (State.Busy)
+        {
+            <span class="assistant-dot" title="Düşünüyor"></span>
+        }
+    </button>
+}
+else
+{
+    <aside class="assistant@(Standalone ? " standalone" : "")" @ref="window" aria-label="Asistan">
+        <header @ref="handle">
+            <strong>Asistan</strong>
+            <span class="muted">@ContextLabel</span>
+            <span class="spacer"></span>
+            @if (!Standalone)
+            {
+                <button class="ghost" title="Ayrı pencerede aç" @onclick="PopOutAsync">⧉</button>
+                <button class="ghost" title="Küçült" @onclick="CloseAsync">—</button>
+            }
+        </header>
+        <div class="assistant-modes">
+            <button class="@(State.Mode == "screen" ? "primary" : "ghost")" @onclick='() => SetMode("screen")'>Bu ekran</button>
+            <button class="@(State.Mode == "new_model" ? "primary" : "ghost")" @onclick='() => SetMode("new_model")'>Yeni robot</button>
+            <button class="@(State.Mode == "import" ? "primary" : "ghost")" @onclick='() => SetMode("import")'>GitHub'dan al</button>
+        </div>
+        @if (State.Mode == "import")
+        {
+            <div class="assistant-log"><ImportPanel /></div>
+        }
+        else
+        {
+            <div class="assistant-log" @ref="log">
+                @if (State.Turns.Count == 0)
+                {
+                    <p class="muted">@Greeting</p>
+                }
+                @foreach (var turn in State.Turns)
+                {
+                    <p class="me">@turn.Text</p>
+                    <p class="bot">@(turn.Reply ?? $"Düşünüyor… {(int)(DateTime.UtcNow - turn.Started).TotalSeconds} sn (model yavaş çalışır, bir dakikayı bulabilir)")</p>
+                    @if (turn.DraftId is not null)
+                    {
+                        <p>
+                            <button class="ghost" @onclick="() => OpenDraft(turn)">3B'de aç</button>
+                            <button class="primary" disabled="@turn.Applied" @onclick="() => State.ApplyAsync(turn)">@(turn.Applied ? "Onay istendi" : "Uygula (onay iste)")</button>
+                        </p>
+                    }
+                }
+            </div>
+            <div class="assistant-chips">
+                @foreach (var chip in Chips)
+                {
+                    <button class="ghost" @onclick="() => SendAsync(chip)">@chip</button>
+                }
+            </div>
+            <form @onsubmit="() => SendAsync(text)" @onsubmit:preventDefault>
+                <textarea rows="2" maxlength="1000" placeholder="@Placeholder" @bind="text" @bind:event="oninput" @onkeydown="OnKey"></textarea>
+                <button class="primary" type="submit" disabled="@(string.IsNullOrWhiteSpace(text))">Gönder</button>
+            </form>
+        }
+    </aside>
+}
+
+@code {
+    [Parameter] public bool Standalone { get; set; }
+
+    private ElementReference window, handle, log;
+    private string text = "";
+    private PeriodicTimer? timer;
+    private bool wired;
+
+    private string Route => Nav.ToBaseRelativePath(Nav.Uri);
+
+    private string ContextLabel =>
+        State.Mode == "new_model" ? "yeni robot"
+        : State.Mode == "import" ? "GitHub içe aktarma"
+        : State.ModelName is { } m ? $"{m} · {State.Tab}" + (State.PickedPart is { } p ? $" · {p}" : "")
+        : "/" + Route.Split('?')[0];
+
+    private string Greeting =>
+        State.Mode == "new_model"
+            ? "Nasıl bir robot istediğini anlat (ne iş yapacak, nerede, ne kadar büyük/ağır). Gerekirse bir iki soru sorarım, sonra taslağını çizerim."
+            : State.ModelName is not null
+                ? "Bu model hakkında sor ya da değiştirt: \"bacak uzunluğunu 130 yap\", \"parçalar uyuyor mu?\", \"kamerayı 10 mm öne al\"."
+                : "Bulunduğun ekranı sor (\"bu ekranda ne yapabilirim?\") ya da bir şey yaptır (\"labirentte koştur\", \"durum nedir\").";
+
+    private string Placeholder => State.Mode == "new_model" ? "Örn: Bahçede çalışacak, 3 kg altı bir robot" : "Mesajını yaz…";
+
+    private string[] Chips => State.Mode == "new_model"
+        ? ["Bahçede çalışacak, hafif bir robot", "Engebeli arazide dayanıklı bir robot"]
+        : State.ModelName is not null
+            ? ["Parçalar uyuyor mu?", "Bu ekranda ne yapabilirim?", "Bu tasarımı kısaca açıkla"]
+            : ["Bu ekranda ne yapabilirim?", "Durum nedir?"];
+
+    protected override void OnInitialized()
+    {
+        State.Changed += OnChanged;
+        Nav.LocationChanged += OnLocation;
+        if (Standalone)
+        {
+            // the separate window: the page that opened it passed what it was looking at
+            var query = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+            if (query["genome"] is { Length: > 0 } genome)
+            {
+                State.SetModel(genome, query["model"], query["tab"]);
+            }
+
+            if (query["mode"] is "new_model" or "import" or "screen")
+            {
+                State.Mode = query["mode"]!;
+            }
+        }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        if (State.Open || Standalone)
+        {
+            try { await Js.InvokeVoidAsync("neml.scrollEnd", log); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+        }
+    });
+
+    private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => OnChanged();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if ((State.Open || Standalone) && !wired && !Standalone)
+        {
+            wired = true;
+            try { await Js.InvokeVoidAsync("neml.floatWindow", window, handle); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+        }
+        else if (!State.Open)
+        {
+            wired = false;
+        }
+
+        if (timer is null)
+        {
+            timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            _ = Tick(timer);
+        }
+    }
+
+    private async Task Tick(PeriodicTimer t)
+    {
+        try
+        {
+            while (await t.WaitForNextTickAsync())
+            {
+                if ((State.Open || Standalone) && State.Busy)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private Task OpenAsync() { State.Open = true; State.Notify(); return Task.CompletedTask; }
+
+    private Task CloseAsync() { State.Open = false; State.Notify(); return Task.CompletedTask; }
+
+    private async Task PopOutAsync()
+    {
+        var q = new List<string> { $"mode={State.Mode}" };
+        if (State.GenomeId is not null)
+        {
+            q.Add($"genome={Uri.EscapeDataString(State.GenomeId)}");
+            q.Add($"model={Uri.EscapeDataString(State.ModelName ?? "")}");
+            q.Add($"tab={Uri.EscapeDataString(State.Tab ?? "")}");
+        }
+
+        try { await Js.InvokeVoidAsync("neml.popOut", $"{Nav.BaseUri}asistan?{string.Join('&', q)}"); } catch (JSException) { }
+        State.Open = false;
+        State.Notify();
+    }
+
+    private void SetMode(string mode) { State.Mode = mode; State.Notify(); }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(text))
+        {
+            await SendAsync(text);
+        }
+    }
+
+    private async Task SendAsync(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        text = "";
+        await State.SendAsync(message, Route);
+    }
+
+    private async Task OpenDraft(AssistantState.Turn turn)
+    {
+        var path = $"evrim/{Uri.EscapeDataString(turn.DraftModel ?? State.ModelName ?? "")}?view={Uri.EscapeDataString(turn.DraftId!)}";
+        if (Standalone)
+        {
+            await Js.InvokeVoidAsync("open", Nav.BaseUri + path, "_blank");
+        }
+        else
+        {
+            Nav.NavigateTo(path);
+        }
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnChanged;
+        Nav.LocationChanged -= OnLocation;
+        timer?.Dispose();
+    }
+}

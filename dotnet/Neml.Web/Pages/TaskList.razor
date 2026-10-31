@@ -1,0 +1,216 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/gorevler"
+@implements IDisposable
+@inject ApiClient Api
+@inject LiveClient Live
+@using System.Text.Json
+
+<PageTitle>Görevler — NEML</PageTitle>
+
+<PageHeader Title="Görevler" Help="İş kuyruğu: bekleyen, çalışan ve biten görevler. Öncelik verebilir ya da iptal edebilirsin." />
+<p class="muted">Lab'ın yapacağı işlerin sırası. Birini öne almak için ▲, geriye atmak için ▼ kullan; ya da aşağıdaki kutuya ne istediğini yaz.</p>
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+<AskBrain Done="ReloadAsync" />
+
+<details class="card">
+    <summary>Gelişmiş: görevi elle oluştur (geliştiriciler için)</summary>
+    <form @onsubmit="CreateAsync" @onsubmit:preventDefault>
+        <label>Başlık<input @bind="newTitle" maxlength="200" /></label>
+        <p class="muted">Görevin listede görünen adı. Ne yapılacağını kısaca yaz.</p>
+        <label>Tür
+            <select @bind="newKind">
+                @foreach (var k in Kinds)
+                {
+                    <option value="@k">@KindLabel(k)</option>
+                }
+            </select>
+        </label>
+        <p class="muted"><strong>insan:</strong> senin verdiğin iş · <strong>keşif:</strong> simülasyon dünyalarını deneme · <strong>evrim:</strong> evrim kampanyasının bir nesli · <strong>onarım / bakım / kalibrasyon:</strong> robot gerektirir, robot bağlı değilken bekler. Elle açacaksan genelde "insan".</p>
+        <label>Öncelik (0-999)<input @bind="newPriority" inputmode="decimal" /></label>
+        <p class="muted">Büyük sayı önce yapılır. Sistemin kendi görevleri 30–60 civarı, komutların 100 civarı. Hemen yapılsın istiyorsan 900 gibi yüksek bir sayı ver.</p>
+        <label>Robot (isteğe bağlı)<input @bind="newRobot" /></label>
+        <p class="muted">Görevi belirli bir robota bağlar (örn. R01). Şu an bağlı robot yok: boş bırak. Doldurursan görev robot onayı bekler.</p>
+        <label>Spec (JSON nesnesi)<textarea rows="4" @bind="newSpec"></textarea></label>
+        <p class="muted">Görevin ayrıntıları, makine biçiminde. Örn. insan görevi için <code>{"command": "yürüme görevi oluştur"}</code>, kayıtlı simülasyon için <code>{"world_id": "maze", "record": true, "duration_s": 8}</code>. Bilmiyorsan <code>{}</code> bırak.</p>
+        <button class="primary" type="submit" disabled="@(string.IsNullOrWhiteSpace(newTitle))">Oluştur</button>
+    </form>
+</details>
+
+<div class="tabs" role="tablist">
+    @foreach (var tab in Tabs)
+    {
+        <button role="tab"
+                aria-selected="@(tab.Key == active)"
+                class="@(tab.Key == active ? "active" : null)"
+                @onclick="() => active = tab.Key">
+            @tab.Label <span class="muted">@Count(tab.Key)</span>
+        </button>
+    }
+</div>
+
+<div class="grid">
+    @foreach (var task in tasks.Where(t => Bucket(t.State) == active).OrderByDescending(t => t.Priority))
+    {
+        <article class="card task">
+            <header>
+                <a class="link" href="@($"gorevler/{task.Id}")">@task.Title</a>
+                <span class="kind">@KindLabel(task.Kind)</span>
+            </header>
+            <p class="muted">@StateLabel(task.State) · öncelik @task.Priority.ToString("0.###")@(task.RobotId is null ? "" : $" · robot {task.RobotId}")</p>
+            <div class="bar">
+                <span style="width:@($"{task.Progress * 100:0}%")" class="ok"></span>
+            </div>
+            @if (Bucket(task.State) == "queue")
+            {
+                <div class="actions">
+                    <button class="ghost" @onclick="() => BumpAsync(task, 1)" aria-label="Önceliği artır">▲</button>
+                    <button class="ghost" @onclick="() => BumpAsync(task, -1)" aria-label="Önceliği azalt">▼</button>
+                </div>
+            }
+        </article>
+    }
+    @if (!tasks.Any(t => Bucket(t.State) == active))
+    {
+        <p class="muted">Bu sekmede görev yok.</p>
+    }
+</div>
+
+@code {
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("queue", "Kuyruk"),
+        ("running", "Çalışan"),
+        ("done", "Tamamlanan"),
+    ];
+
+    private List<TaskItem> tasks = [];
+    private string active = "queue";
+    private string? error;
+    private IDisposable? subscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        subscription = Live.Hub.On<TaskUpdatedEvent>("TaskUpdated", OnTaskUpdatedAsync);
+
+        try
+        {
+            tasks = [.. await Api.GetTasksAsync()];
+        }
+        catch (HttpRequestException)
+        {
+            error = "Görev listesi alınamadı.";
+        }
+    }
+
+    private static readonly string[] Kinds = ["human", "repair", "exploration", "evolution", "maintenance", "calibration"];
+    private string newTitle = "", newKind = "human", newPriority = "5", newRobot = "", newSpec = "{}";
+
+    private async Task CreateAsync()
+    {
+        error = null;
+        JsonElement spec;
+        try
+        {
+            spec = JsonDocument.Parse(newSpec).RootElement.Clone();
+            if (spec.ValueKind != JsonValueKind.Object || ViewLogic.Number(newPriority) is not { } priority)
+            {
+                throw new JsonException();
+            }
+
+            var body = new NewTask(newTitle.Trim(), newKind, "user:web", (decimal)priority,
+                string.IsNullOrWhiteSpace(newRobot) ? null : newRobot.Trim(), spec);
+            (await Api.CreateTaskAsync(body)).EnsureSuccessStatusCode();
+            newTitle = "";
+            tasks = [.. await Api.GetTasksAsync()];
+        }
+        catch (JsonException)
+        {
+            error = "Spec geçerli bir JSON nesnesi ve öncelik bir sayı olmalı.";
+        }
+        catch (HttpRequestException)
+        {
+            error = "Görev oluşturulamadı.";
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            tasks = [.. await Api.GetTasksAsync()];
+        }
+        catch (HttpRequestException)
+        {
+            error = "Görev listesi alınamadı.";
+        }
+    }
+
+    private async Task BumpAsync(TaskItem task, decimal delta)
+    {
+        var next = Math.Clamp(task.Priority + delta, 0m, 999m);
+        try
+        {
+            (await Api.SetPriorityAsync(task.Id, next)).EnsureSuccessStatusCode();
+            var index = tasks.FindIndex(t => t.Id == task.Id);
+            tasks[index] = task with { Priority = next };
+        }
+        catch (HttpRequestException)
+        {
+            error = "Öncelik değiştirilemedi.";
+        }
+    }
+
+    private Task OnTaskUpdatedAsync(TaskUpdatedEvent e)
+    {
+        var index = tasks.FindIndex(t => t.Id == e.TaskId);
+        if (index < 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        tasks[index] = tasks[index] with { State = e.State, Progress = e.Progress };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private int Count(string bucket) => tasks.Count(t => Bucket(t.State) == bucket);
+
+    /// <summary>Maps the §7 tasks.state values onto the §10.2 screen 4 tabs.</summary>
+    public static string Bucket(string state) => state switch
+    {
+        "running" => "running",
+        "succeeded" or "failed" or "cancelled" => "done",
+        _ => "queue",
+    };
+
+    public static string StateLabel(string state) => state switch
+    {
+        "queued" => "sırada",
+        "planning" => "planlanıyor",
+        "awaiting_approval" => "onayını bekliyor",
+        "running" => "çalışıyor",
+        "paused" => "durduruldu (elle devam gerekir)",
+        "succeeded" => "tamamlandı",
+        "failed" => "başarısız",
+        "cancelled" => "iptal edildi",
+        _ => state,
+    };
+
+    public static string KindLabel(string kind) => kind switch
+    {
+        "human" => "insan",
+        "repair" => "onarım",
+        "exploration" => "keşif",
+        "evolution" => "evrim",
+        "maintenance" => "bakım",
+        "calibration" => "kalibrasyon",
+        _ => kind,
+    };
+
+    public void Dispose() => subscription?.Dispose();
+}

@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §14.4 — daily budgets.
+
+reset_at: "00:00"
+timezone: Europe/Istanbul
+notify_at_ratio: 0.90        # §14.4: a notification goes out at 90%.
+
+limits:
+  gpu_hours:                 # vLLM + visual sim
+    limit: 6
+    unit: hours
+    on_exceed: reject_llm_call     # request is refused, the queue waits
+  sim_runs:
+    limit: 200
+    unit: runs
+    on_exceed: reject_sim
+  robot_hours:               # physical robot operation
+    limit: 3
+    unit: hours
+    on_exceed: sim_tasks_only
+  filament_grams:
+    limit: 500
+    unit: grams
+    on_exceed: reject_print_approval
+  pcb_orders:
+    limit: 1
+    unit: orders
+    period: month            # the only non-daily budget (§14.4)
+    on_exceed: reject_approval
+  llm_tokens:
+    limit: 500000
+    unit: tokens
+    on_exceed: reject

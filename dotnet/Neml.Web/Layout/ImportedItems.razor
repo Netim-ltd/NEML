@@ -1,0 +1,210 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@inject TokenStore Tokens
+@inject ApiClient Api
+@using System.Text.Json
+
+@if (items.Count > 0)
+{
+    <section class="card">
+        <h3>@(Boards ? "İçe aktarılan kartlar (GitHub)" : "İçe aktarılan tasarımlar (GitHub)")</h3>
+        @if (!Boards && GenomeId.Length > 0)
+        {
+            <p>
+                @foreach (var repo in Repos)
+                {
+                    <button class="ghost" disabled="@refreshing" @onclick="() => RefreshAsync(repo)">↻ @repo: güncel yöntemle yeniden içe aktar</button>
+                }
+                @if (refreshMessage is not null) { <span class="muted"> @refreshMessage</span> }
+            </p>
+        }
+        @foreach (var e in items)
+        {
+            <article class="turn">
+                <p>
+                    <strong>@Str(e, "name")</strong> <span class="state">@Str(e, "kind")</span>
+                    · <a href="@Str(e, "source")" target="_blank" rel="noopener noreferrer">kaynak</a>
+                    · lisans: <strong>@Str(e, "license")</strong>
+                </p>
+                @if (Str(e, "kind") == "repo")
+                {
+                    @if (e.TryGetProperty("analysis", out var an) && an.ValueKind == JsonValueKind.Object)
+                    {
+                        <p><strong>@Str(an, "title")</strong> <span class="state">@Str(an, "category")</span></p>
+                        <p>@Str(an, "summary")</p>
+                        @if (an.TryGetProperty("steps", out var steps) && steps.ValueKind == JsonValueKind.Array)
+                        {
+                            <ul>@foreach (var st in steps.EnumerateArray()) { <li>@st.GetString()</li> }</ul>
+                        }
+                    }
+                    else
+                    {
+                        <p class="muted">Modelin yorumu alınamadı; yapı ve README aşağıda.</p>
+                    }
+
+                    @if (e.TryGetProperty("overview", out var ov))
+                    {
+                        <p class="muted">@Num(ov, "files") dosya · @string.Join(", ", ov.GetProperty("by_ext").EnumerateObject().Take(8).Select(x => $"{x.Name} ×{x.Value}"))</p>
+                        <details><summary>Klasörler ve dosya örnekleri</summary>
+                            <p>@string.Join(" · ", ov.GetProperty("dirs").EnumerateArray().Select(d => $"{Str(d, "dir")} ({Num(d, "files")})"))</p>
+                            <pre>@string.Join("\n", ov.GetProperty("sample").EnumerateArray().Take(60).Select(x => x.GetString()))</pre>
+                        </details>
+                    }
+
+                    @if (Str(e, "readme") is { Length: > 0 } readme)
+                    {
+                        <details><summary>README (ilk bölüm)</summary><pre>@readme</pre></details>
+                    }
+
+                    @if (e.TryGetProperty("skipped", out var left) && left.ValueKind == JsonValueKind.Array && left.GetArrayLength() > 0)
+                    {
+                        <details><summary>Alınmayan @left.GetArrayLength() dosya</summary><pre>@string.Join("\n", left.EnumerateArray().Select(x => x.GetString()))</pre></details>
+                    }
+                }
+                else if (Str(e, "kind") == "kicad")
+                {
+                    <p>
+                        @Rule(e, "erc", "ERC (şema)") @Rule(e, "drc", "DRC (PCB)")
+                    </p>
+                    @if (e.TryGetProperty("urls", out var urls))
+                    {
+                        <div class="grid">
+                            @foreach (var pic in new[] { ("Şema", "schematic_svg"), ("PCB", "board_svg") })
+                            {
+                                @if (urls.TryGetProperty(pic.Item2, out var u))
+                                {
+                                    <figure><img src="@Link(u.GetString()!)" alt="@pic.Item1" style="width:100%;background:#fff;border-radius:6px" /><figcaption>@pic.Item1</figcaption></figure>
+                                }
+                            }
+                        </div>
+                        <p>
+                            @foreach (var file in new[] { ("KiCad şema", "schematic"), ("KiCad PCB", "board") })
+                            {
+                                @if (urls.TryGetProperty(file.Item2, out var u))
+                                {
+                                    <a class="primary" href="@Link(u.GetString()!)" download>@file.Item1 indir</a>
+                                }
+                            }
+                        </p>
+                    }
+
+                    <p class="muted">@Str(e, "note") Bu kartı KiCad'de açıp düzenleyebilirsin; burada yalnızca önizleme ve kural kontrolü var.</p>
+                }
+                else if (Str(e, "kind") == "urdf" && e.TryGetProperty("urdf", out var u2))
+                {
+                    @if (u2.TryGetProperty("error", out var uerr))
+                    {
+                        <p><span class="state warn">URDF okunamadı</span> @uerr.GetString()</p>
+                        <p class="muted">Parçalar montajsız: 3B'de "parça tablosu" olarak dizilir.</p>
+                    }
+                    else
+                    {
+                        <p>Robot: <strong>@Str(u2, "robot")</strong> · @Num(u2, "links") parça (link), @Num(u2, "joints") eklem (@Num(u2, "movable_joints") hareketli).</p>
+                        @if (e.TryGetProperty("assembly", out var asm) && asm.ValueKind == JsonValueKind.Array)
+                        {
+                            <p class="muted">@asm.GetArrayLength() parça görseli eklem zincirine göre yerleştirildi: robot 3B'de montajlı (sıfır poz) görünür.</p>
+                        }
+                        @if (u2.TryGetProperty("shapes", out var shapes) && shapes.ValueKind == JsonValueKind.Object && shapes.EnumerateObject().Any())
+                        {
+                            <p class="muted">Basit şekiller de çizilir: @string.Join(", ", shapes.EnumerateObject().Select(x => $"{x.Name} ×{x.Value}")).</p>
+                        }
+
+                        @if (e.TryGetProperty("rig", out var rg) && rg.ValueKind == JsonValueKind.Object)
+                        {
+                            <p class="muted">Eklemleri 3B sekmesindeki "Eklem pozu" kartından oynatabilirsin.</p>
+                        }
+
+                        @if (e.TryGetProperty("unmatched", out var um) && um.ValueKind == JsonValueKind.Array && um.GetArrayLength() > 0)
+                        {
+                            <p class="muted">URDF'nin istediği ama alınmayan mesh dosyaları (başka biçimde ya da seçilmedi): @string.Join(", ", um.EnumerateArray().Select(x => x.GetString()))</p>
+                        }
+                    }
+                }
+                else if (e.TryGetProperty("size", out var size))
+                {
+                    <p class="muted">Boyut @string.Join(" × ", size.EnumerateArray().Select(v => v.GetDouble().ToString("0.#"))) mm (STL milimetre varsayıldı). 3B'de parçaya tıklayıp konumunu değiştirebilirsin.</p>
+                }
+            </article>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public JsonElement Scene { get; set; }
+    [Parameter] public bool Boards { get; set; }
+    [Parameter] public string GenomeId { get; set; } = "";
+    [Parameter] public EventCallback<string> OnDraft { get; set; }
+
+    private bool refreshing;
+    private string? refreshMessage;
+
+    private IEnumerable<string> Repos =>
+        Scene.TryGetProperty("imports", out var all) && all.ValueKind == JsonValueKind.Array
+            ? all.EnumerateArray().Select(e => Str(e, "repo")).Where(r => r.Length > 0 && r != "generated").Distinct()
+            : [];
+
+    /// <summary>Takes the repository again with the current import pipeline (older imports lack poses, primitives, compact meshes).</summary>
+    private async Task RefreshAsync(string repo)
+    {
+        refreshing = true;
+        refreshMessage = "Yeniden içe aktarılıyor (birkaç dakika sürebilir)…";
+        StateHasChanged();
+        try
+        {
+            var accepted = await Api.RefreshImportAsync(GenomeId, repo);
+            for (var i = 0; i < 300; i++)
+            {
+                await Task.Delay(2000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("draft", out var draft))
+                {
+                    refreshMessage = "Hazır: yeni taslak açılıyor.";
+                    await OnDraft.InvokeAsync(draft.GetProperty("id").GetString());
+                }
+                else
+                {
+                    refreshMessage = "Olmadı: " + (status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() : status.State);
+                }
+
+                return;
+            }
+
+            refreshMessage = "Lab cevap vermedi.";
+        }
+        catch (HttpRequestException)
+        {
+            refreshMessage = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            refreshing = false;
+        }
+    }
+
+    private List<JsonElement> items = [];
+
+    protected override void OnParametersSet() =>
+        items = Scene.TryGetProperty("imports", out var all) && all.ValueKind == JsonValueKind.Array
+            ? [.. all.EnumerateArray().Where(e => (Str(e, "kind") == "kicad") == Boards)]
+            : [];
+
+    private static string Str(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    private static long Num(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : 0;
+
+    private static MarkupString Rule(JsonElement e, string key, string label)
+    {
+        if (!e.TryGetProperty(key, out var r) || r.ValueKind != JsonValueKind.Object) { return default; }
+        if (!r.TryGetProperty("ran", out var ran) || ran.ValueKind != JsonValueKind.True)
+        {
+            return new MarkupString($"<span class=\"state warn\">{label}: çalışmadı</span> ");
+        }
+
+        var errors = r.GetProperty("errors").GetInt32();
+        var warnings = r.GetProperty("warnings").GetInt32();
+        return new MarkupString($"<span class=\"state {(errors == 0 ? "ok" : "warn")}\">{label}: {errors} hata, {warnings} uyarı</span> ");
+    }
+
+    private string Link(string url) => $"{url.TrimStart('/')}?access_token={Tokens.Access}";
+}

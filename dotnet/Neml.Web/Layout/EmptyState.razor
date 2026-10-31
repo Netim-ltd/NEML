@@ -1,0 +1,16 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@* Nothing here yet: say so, say why, and offer the next step. *@
+<div class="empty">
+    <Icon Name="@Icon" />
+    <strong>@Title</strong>
+    @if (!string.IsNullOrEmpty(Hint)) { <span>@Hint</span> }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string Icon { get; set; } = "inbox";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

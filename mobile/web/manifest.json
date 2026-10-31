@@ -1,0 +1,9 @@
+{
+  "name": "NEML Filo Yönetimi",
+  "short_name": "NEML",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#102a27",
+  "theme_color": "#102a27",
+  "description": "Robot filo yönetimi ve onay konsolu"
+}

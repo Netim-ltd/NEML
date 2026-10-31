@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §4.5 — navigation/mapping profile. Ray casting stays on CPU,
+# so vLLM is untouched.
+
+profile: lidar
+default: false
+camera: false
+render_device: cpu
+vllm: keep_running
+sensors: [imu, encoders, contacts, lidar]
+gz_args: "-s -r --headless-rendering"
+physics: {engine: dart, max_step_size: 0.001, real_time_factor: 0}

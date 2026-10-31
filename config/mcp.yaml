@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §6.5 — verbatim, with one fix: the spec writes
+# "filesystem:{url:" with no space after the colon, which is not valid YAML.
+# One space added so the file parses; values are untouched.
+#
+# MCP calls are made deterministically by LangGraph nodes. Handing this list
+# to the model and letting it choose is forbidden (§6.5).
+
+servers:
+  freecad:   {url: "http://127.0.0.1:9104/mcp", timeout_s: 120, retries: 2}
+  kicad:     {url: "http://127.0.0.1:9105/mcp", timeout_s: 180, retries: 1}
+  sim:       {url: "http://127.0.0.1:9101/mcp", timeout_s: 600, retries: 0}
+  fab:       {url: "http://127.0.0.1:9102/mcp", timeout_s: 120, retries: 1}
+  genome:    {url: "http://127.0.0.1:9103/mcp", timeout_s: 30,  retries: 2}
+  postgres:  {url: "http://127.0.0.1:9106/mcp", timeout_s: 30,  retries: 2, role: readonly}
+  filesystem: {url: "http://127.0.0.1:9107/mcp", timeout_s: 30,  retries: 2,
+              allowed_paths: ["/srv/neml/work", "/srv/neml/artifacts"]}
+  git:       {url: "http://127.0.0.1:9108/mcp", timeout_s: 60,  retries: 1}
+  blender:   {url: "http://127.0.0.1:9110/mcp", timeout_s: 600, retries: 0}
+  # SPEC 6.1 #7. Docs-only, allowlist-enforced inside the server. Optional: the
+  # small control node does not run it, and that is "off", not a red health line.
+  fetch:     {url: "http://127.0.0.1:9109/mcp", timeout_s: 30,  retries: 1, optional: true}

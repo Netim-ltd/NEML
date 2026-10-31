@@ -1,0 +1,178 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Deploy control plane
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neml-control-production
+  cancel-in-progress: false
+
+jobs:
+  publish-and-deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: control-production
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Check deployment credentials
+        id: credentials
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$DOCKERHUB_TOKEN" && -n "$DEPLOY_SSH_KEY" && \
+                -n "$DEPLOY_KNOWN_HOSTS" && -n "$DEPLOY_HOST" && \
+                -n "$DEPLOY_USER" && -n "$DOCKERHUB_NAMESPACE" ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::notice::Control deployment is waiting for Docker Hub and SSH secrets.'
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Require current tested main commit
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$DOCKERHUB_NAMESPACE" =~ ^[a-z0-9][a-z0-9_-]*$ ]]
+      - uses: docker/login-action@v3
+        if: steps.credentials.outputs.ready == 'true'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+        if: steps.credentials.outputs.ready == 'true'
+      - uses: docker/build-push-action@v6
+        if: steps.credentials.outputs.ready == 'true'
+        with:
+          context: .
+          file: docker/brain/Dockerfile
+          push: true
+          tags: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/neml-brain:sha-${{ github.event.workflow_run.head_sha }}
+          provenance: true
+      - uses: docker/build-push-action@v6
+        if: steps.credentials.outputs.ready == 'true'
+        with:
+          context: .
+          file: docker/api/Dockerfile
+          push: true
+          tags: docker.io/${{ vars.DOCKERHUB_NAMESPACE }}/neml-api:sha-${{ github.event.workflow_run.head_sha }}
+          provenance: true
+      - uses: actions/download-artifact@v4
+        if: steps.credentials.outputs.ready == 'true'
+        with:
+          name: neml-web
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: web-dist
+      - name: Install pinned SSH host key
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Transfer tested deployment snapshot
+        if: steps.credentials.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh -o StrictHostKeyChecking=yes "$dest" "mkdir -p /srv/neml/releases/$RELEASE_SHA"
+          tar -cf - docker/compose.control.yml docker/compose.api.yml docker/compose.panel.yml \
+            docker/caddy/Caddyfile deploy/nginx/neml-proxy-live.conf \
+            deploy/nginx/neml-panel-unprivileged.conf \
+            scripts/setup/deploy_control.sh scripts/setup/deploy_release.sh \
+            scripts/setup/deploy_api.sh scripts/setup/deploy_panel.sh \
+            scripts/setup/check_control_env.py \
+            scripts/setup/check_api_env.py | \
+            ssh -o StrictHostKeyChecking=yes "$dest" \
+              "tar -xf - -C /srv/neml/releases/$RELEASE_SHA"
+      - name: Deploy tested Flutter panel
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+          dest="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh -o StrictHostKeyChecking=yes "$dest" "mkdir -p /srv/neml/web/releases/$RELEASE_SHA"
+          tar -cf - -C web-dist . | ssh -o StrictHostKeyChecking=yes "$dest" \
+            "tar -xf - -C /srv/neml/web/releases/$RELEASE_SHA"
+          ssh -o StrictHostKeyChecking=yes "$dest" \
+            "bash /srv/neml/releases/$RELEASE_SHA/scripts/setup/deploy_panel.sh $RELEASE_SHA"
+      - name: Install protected service configuration
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          NEML_API_ENV: ${{ secrets.NEML_API_ENV }}
+          NEML_BRAIN_ENV: ${{ secrets.NEML_BRAIN_ENV }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$NEML_API_ENV" && -n "$NEML_BRAIN_ENV" ]] || {
+            echo '::error::Set NEML_API_ENV and NEML_BRAIN_ENV in the control-production environment.'
+            exit 1
+          }
+          api_file="$(mktemp)"
+          brain_file="$(mktemp)"
+          trap 'rm -f "$api_file" "$brain_file"' EXIT
+          printf '%s\n' "$NEML_API_ENV" > "$api_file"
+          printf '%s\n' "$NEML_BRAIN_ENV" > "$brain_file"
+          python3 scripts/setup/check_control_env.py "$brain_file"
+          python3 scripts/setup/check_api_env.py "$api_file" "$brain_file"
+          dest="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh -o StrictHostKeyChecking=yes "$dest" 'install -d -m 700 /srv/neml/shared'
+          printf '%s\n' "$NEML_API_ENV" | ssh -o StrictHostKeyChecking=yes "$dest" \
+            'umask 077; cat > /srv/neml/shared/api.env.next'
+          printf '%s\n' "$NEML_BRAIN_ENV" | ssh -o StrictHostKeyChecking=yes "$dest" \
+            'umask 077; cat > /srv/neml/shared/.env.next'
+          ssh -o StrictHostKeyChecking=yes "$dest" '
+            set -e
+            cd /srv/neml/shared
+            test -s api.env.next && test -s .env.next
+            if test -f api.env; then cp -p api.env api.env.previous; fi
+            if test -f .env; then cp -p .env .env.previous; fi
+            mv api.env.next api.env
+            mv .env.next .env'
+      - name: Deploy and verify health
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$RELEASE_SHA"
+          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash /srv/neml/releases/$RELEASE_SHA/scripts/setup/deploy_release.sh $RELEASE_SHA $DOCKERHUB_NAMESPACE /srv/neml/releases"

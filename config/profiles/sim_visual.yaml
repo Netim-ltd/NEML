@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §4.5 — perception-only profile. The camera needs the GPU and
+# 3 GB does not fit two tenants, so the orchestrator takes the GPU mutex and
+# STOPS the neml-vllm container for the duration of the run.
+
+profile: visual
+default: false
+camera: true
+render_device: gpu          # GPU required
+vllm: must_stop             # container stopped before the run, started after
+restart_cost_s: 40          # §4.5 — planned for, not a surprise
+gpu_lock: {consumer: gazebo, timeout_s: 300}
+sensors: [imu, encoders, contacts, camera]
+gz_args: "-s -r --headless-rendering"
+physics: {engine: dart, max_step_size: 0.001, real_time_factor: 0}

@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+:8443 {
+    tls /certs/lab.crt /certs/lab.key
+    @model_transport {
+        path /v1/platform/ticket-request /v1/platform/model-bundle /v1/platform/model-ack /v1/platform/feedback /v1/platform/feedback-export /v1/platform/operation/generate
+    }
+    handle @model_transport {
+        reverse_proxy brain:8080
+    }
+    respond 404
+}

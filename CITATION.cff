@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+cff-version: 1.2.0
+title: "NEML - Networked Evolutionary Machine Laboratory"
+authors:
+  - family-names: Gulsoy
+    given-names: Mustafa
+license: AGPL-3.0-or-later
+date-released: 2026-10-31
+repository-code: "https://github.com/Netim-ltd/NEML"

@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Lab-station swarm coordinator (NEML_SPEC.md Faz 5, T-080..T-083).
+# The `robots` list is the fleet roster; T-080 brings it to three.
+
+/**/swarm_coordinator:
+  ros__parameters:
+    use_sim_time: false
+    robots:
+      - r01
+      - r02
+      - r03
+    robot_state_topic: state/robot          # subscribed as /<robot>/state/robot
+    tasks_topic: /swarm/tasks               # JSON array from neml-brain
+    assignments_topic: /swarm/assignments   # JSON object back to the fleet
+    heartbeat_topic: /swarm/coordinator_heartbeat
+    robot_timeout_s: 2.0                    # matches the T-083 link deadline
+    check_rate_hz: 2.0
+    heartbeat_rate_hz: 5.0                  # 200 ms; a robot needs 8 of these
+                                            # to pass before its guard trips

@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Run the pre-session self test. NEML_SPEC.md SS5.1 requires an e-stop and
+# watchdog test before every physical session; the result is written to the
+# `safety_checks` table and neml-brain refuses physical tasks without it.
+
+uint8 SUITE_ESTOP=0          # e-stop loop opens and the relay drops
+uint8 SUITE_WATCHDOG=1       # heartbeat loss opens the relay within 150 ms
+uint8 SUITE_JOINTS=2         # all 16 joints report position and respond
+uint8 SUITE_SENSORS=3        # imu, depth camera and current sensors publish
+uint8 SUITE_ALL=4            # every suite above, in order
+
+uint8 suite                  # one of SUITE_*
+---
+bool passed                  # true only when every check in the suite passed
+string[] check_name          # per-check identifier, parallel to check_passed
+bool[] check_passed          # per-check result, parallel to check_name
+string[] check_detail        # per-check measurement or failure text, parallel to check_name
+float64 duration_s           # wall time the suite took, seconds

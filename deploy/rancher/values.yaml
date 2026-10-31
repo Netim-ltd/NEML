@@ -1,0 +1,44 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Lightweight control plane: one release/namespace/database per firm. The
+# 1 CPU / 2 GB node cannot run vLLM, Gazebo, CAD or media workloads locally.
+image:
+  repository: docker.io/replace-me/neml-brain
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+existingSecret: neml-brain-secrets
+nodeId: lab-01
+model: Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ
+external:
+  vllmUrl: ""
+  embedUrl: ""
+  mcp:
+    freecad: ""
+    kicad: ""
+    sim: ""
+    fab: ""
+    genome: ""
+    postgres: ""
+    filesystem: ""
+    git: ""
+    blender: ""
+persistence:
+  size: 10Gi
+  storageClassName: ""
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+service:
+  port: 8080
+# This optional ingress exposes only the three signed model transport routes.
+# Configure a real host and an existing TLS Secret before enabling it.
+edgeIngress:
+  enabled: false
+  className: ""
+  host: ""
+  tlsSecretName: ""

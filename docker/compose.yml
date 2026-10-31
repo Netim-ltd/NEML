@@ -1,0 +1,324 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md 15 - the whole lab stack. Bring-up order is SPEC 17.4:
+#   postgres -> vllm + embed -> mcp-* -> brain
+#
+# Run it from the repository root so the secrets come from the root .env:
+#   docker compose --env-file .env -f docker/compose.yml up -d postgres
+#
+# Ports are SPEC 17.1: everything is bound to 127.0.0.1 except neml-brain,
+# which is the only LAN-facing service. No secret is written in this file;
+# HF_TOKEN and POSTGRES_PASSWORD come from .env (SPEC 5.4).
+
+name: neml
+
+# The brain image also carries mcp_servers/, so the four SPEC 6.2 daemons are
+# the same image with a different entry point. One build, five services.
+x-brain-image: &brain-image
+  image: neml/brain:1.0
+  build:
+    context: ..
+    dockerfile: docker/brain/Dockerfile
+  restart: unless-stopped
+  env_file:
+    - path: ../.env
+      required: false
+
+# ponytail: the MCP health check is an `initialize` round trip over the
+# Streamable HTTP transport (SPEC 6.2); these servers have no /health route and
+# mcp_servers/ is not ours to change.
+x-mcp-health: &mcp-health
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 20s
+
+services:
+
+  # Opt-in robot model transport. Only three signed platform endpoints are
+  # proxied, and the default host binding stays on loopback.
+  lab-model-tls:
+    image: caddy:2
+    profiles: [edge]
+    container_name: neml-lab-model-tls
+    restart: unless-stopped
+    ports: ["${NEML_LAB_BIND_IP:-127.0.0.1}:8443:8443"]
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${NEML_TLS_CERT_FILE:-../secrets/lab.crt}:/certs/lab.crt:ro
+      - ${NEML_TLS_KEY_FILE:-../secrets/lab.key}:/certs/lab.key:ro
+    depends_on:
+      brain: {condition: service_started}
+
+  # ---------------------------------------------------------------- postgres
+  postgres:
+    image: pgvector/pgvector:pg16 # SPEC 7: PostgreSQL 16 + pgvector
+    container_name: neml-postgres
+    restart: unless-stopped
+    ports: ["127.0.0.1:5432:5432"] # SPEC 17.1 - localhost only
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neml}
+      POSTGRES_DB: ${POSTGRES_DB:-neml_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-neml.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-neml} -d $${POSTGRES_DB:-neml_local}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # -------------------------------------------------------------------- vllm
+  # SPEC 4.2 - the flag list below is the spec's, verbatim and in order.
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: neml-vllm # GpuLock stops this name by hand (SPEC 4.5)
+    runtime: nvidia
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"] # SPEC 17.1 - localhost only
+    volumes: ["hf-cache:/root/.cache/huggingface"]
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+    command: >
+      --model Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ
+      --quantization awq
+      --dtype half
+      --max-model-len 4096
+      --gpu-memory-utilization 0.88
+      --enforce-eager
+      --max-num-seqs 2
+      --swap-space 2
+      --disable-log-requests
+      --guided-decoding-backend xgrammar
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 900s # first start downloads ~1.1 GB of weights (T-005)
+
+  # ------------------------------------------------------------------- embed
+  embed:
+    image: neml/embed:1.0
+    build:
+      context: ..
+      dockerfile: docker/embed/Dockerfile
+    container_name: neml-embed
+    restart: unless-stopped
+    ports: ["127.0.0.1:8081:8081"] # SPEC 17.1 - localhost only
+    environment:
+      # SPEC 4.6: CPU, int8 ONNX. Threads are capped so the embedder never
+      # starves the simulator it shares the box with.
+      OMP_NUM_THREADS: ${NEML_EMBED_THREADS:-8}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ------------------------------------------------------------------- brain
+  brain:
+    <<: *brain-image
+    container_name: neml-brain
+    command: ["uvicorn", "neml_brain.main:app", "--host", "0.0.0.0", "--port", "8080"]
+    ports: ["8080:8080"] # SPEC 17.1 - the one LAN service
+    environment:
+      NEML_DB_URL: postgresql+asyncpg://${POSTGRES_USER:-neml}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-neml_local}
+      NEML_VLLM_URL: http://vllm:8000/v1
+      NEML_EMBED_URL: http://embed:8081
+      NEML_CONFIG_DIR: /app/config
+      NEML_MCP_URL_FREECAD: http://mcp-cad:9104/mcp
+      NEML_MCP_URL_KICAD: http://mcp-kicad:9105/mcp
+      NEML_MCP_URL_SIM: http://mcp-sim:9101/mcp
+      NEML_MCP_URL_FAB: http://mcp-fab:9102/mcp
+      NEML_MCP_URL_GENOME: http://mcp-genome:9103/mcp
+      NEML_MCP_URL_POSTGRES: http://mcp-pg:9106/mcp
+      NEML_MCP_URL_FILESYSTEM: http://mcp-fs:9107/mcp
+      NEML_MCP_URL_GIT: http://mcp-git:9108/mcp
+      NEML_MCP_URL_BLENDER: http://mcp-blender:9110/mcp
+      NEML_MCP_URL_FETCH: http://mcp-fetch:9109/mcp
+    volumes:
+      - ../config:/app/config:ro
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+      - neml-state:/var/lib/neml
+      # SPEC 4.5: the GPU mutex stops and starts neml-vllm over this socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # The brain runs as uid 1000; the socket is owned by the host docker group.
+    group_add: ["${DOCKER_GID:-999}"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      embed: {condition: service_healthy}
+      vllm: {condition: service_started} # a cold model pull must not block the brain
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ------------------------------------------------------- MCP servers (6.2)
+  # ponytail: these three call host tools (gz, prusa-slicer, freecadcmd) that
+  # scripts/setup/02-04 install on the Ubuntu host, not into this image. The MCP
+  # daemon itself is pure Python and healthy without them; a tool call with no
+  # binary returns a typed error instead of crashing the server. Upgrade path
+  # when Faz 2 needs real runs: run these as systemd units on the host, or
+  # bind-mount a self-contained tool tree and point the *_BIN variables at it.
+  mcp-sim:
+    <<: *brain-image
+    container_name: neml-mcp-sim
+    command: ["uvicorn", "mcp_servers.neml_mcp_sim.server:app", "--host", "0.0.0.0", "--port", "9101"]
+    ports: ["127.0.0.1:9101:9101"]
+    volumes:
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9101/mcp"]
+
+  mcp-fab:
+    <<: *brain-image
+    container_name: neml-mcp-fab
+    command: ["uvicorn", "mcp_servers.neml_mcp_fab.server:app", "--host", "0.0.0.0", "--port", "9102"]
+    ports: ["127.0.0.1:9102:9102"]
+    volumes:
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+      - ../manufacturing/slicer_profiles:/srv/neml/slicer_profiles:ro
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9102/mcp"]
+
+  mcp-genome:
+    <<: *brain-image
+    container_name: neml-mcp-genome
+    command: ["uvicorn", "mcp_servers.neml_mcp_genome.server:app", "--host", "0.0.0.0", "--port", "9103"]
+    ports: ["127.0.0.1:9103:9103"]
+    volumes:
+      - ../hardware/genome:/app/hardware/genome:ro
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9103/mcp"]
+
+  mcp-cad:
+    <<: *brain-image
+    container_name: neml-mcp-cad
+    command: ["uvicorn", "mcp_servers.neml_mcp_cad.server:app", "--host", "0.0.0.0", "--port", "9104"]
+    ports: ["127.0.0.1:9104:9104"]
+    volumes:
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9104/mcp"]
+
+  mcp-blender:
+    image: neml/blender-mcp:1.0
+    build:
+      context: ..
+      dockerfile: docker/blender/Dockerfile
+    container_name: neml-mcp-blender
+    restart: unless-stopped
+    ports: ["127.0.0.1:9110:9110"]
+    environment:
+      NEML_ARTIFACT_DIR: /srv/neml/artifacts
+    volumes:
+      - neml-artifacts:/srv/neml/artifacts
+    mem_limit: 2g
+    cpus: 2
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9110/mcp"]
+
+  mcp-kicad:
+    image: neml/kicad-mcp:1.0
+    build:
+      context: ..
+      dockerfile: docker/kicad/Dockerfile
+    container_name: neml-mcp-kicad
+    restart: unless-stopped
+    ports: ["127.0.0.1:9105:9105"]
+    environment:
+      NEML_ARTIFACT_DIR: /srv/neml/artifacts
+    volumes:
+      - neml-artifacts:/srv/neml/artifacts
+    mem_limit: 2g
+    cpus: 2
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9105/mcp"]
+
+  # --------------------------------------------- T-016 filesystem/git/postgres
+  # SPEC 6.1 #4/#5/#6 name upstream stdio servers that a human installs after a
+  # licence read (scripts/setup/05_mcp_servers.sh). SPEC 19 risk #4 plans for
+  # that not happening: "kendi sunucunu yaz". These three are ours, they speak
+  # the same Streamable HTTP transport as the four above, and they are what
+  # makes /health report every MCP green with nothing but `docker compose up`.
+  mcp-pg:
+    <<: *brain-image
+    container_name: neml-mcp-pg
+    command: ["uvicorn", "mcp_servers.neml_mcp_pg.server:app", "--host", "0.0.0.0", "--port", "9106"]
+    ports: ["127.0.0.1:9106:9106"]
+    environment:
+      # SPEC 6.1 #4 - the READ-ONLY role, not the brain's. Write access is
+      # refused by the GRANT, not by the client.
+      NEML_DB_URL_READONLY: postgresql://${POSTGRES_RO_USER:-neml_ro}:${POSTGRES_RO_PASSWORD:-${POSTGRES_PASSWORD}}@postgres:5432/${POSTGRES_DB:-neml_local}
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9106/mcp"]
+
+  mcp-fs:
+    <<: *brain-image
+    container_name: neml-mcp-fs
+    command: ["uvicorn", "mcp_servers.neml_mcp_fs.server:app", "--host", "0.0.0.0", "--port", "9107"]
+    ports: ["127.0.0.1:9107:9107"]
+    environment:
+      # SPEC 6.5 filesystem.allowed_paths - these two and nothing else.
+      NEML_FS_ALLOWED_PATHS: /srv/neml/work:/srv/neml/artifacts
+    volumes:
+      - neml-work:/srv/neml/work
+      - neml-artifacts:/srv/neml/artifacts
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9107/mcp"]
+
+  mcp-fetch:
+    <<: *brain-image
+    container_name: neml-mcp-fetch
+    command: ["uvicorn", "mcp_servers.neml_mcp_fetch.server:app", "--host", "0.0.0.0", "--port", "9109"]
+    ports: ["127.0.0.1:9109:9109"]
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9109/mcp"]
+
+  mcp-git:
+    <<: *brain-image
+    container_name: neml-mcp-git
+    command: ["uvicorn", "mcp_servers.neml_mcp_git.server:app", "--host", "0.0.0.0", "--port", "9108"]
+    ports: ["127.0.0.1:9108:9108"]
+    environment:
+      # The work repo, never the deployment tree.
+      NEML_GIT_REPO: /srv/neml/work/repo
+    volumes:
+      - neml-work:/srv/neml/work
+    healthcheck:
+      <<: *mcp-health
+      test: ["CMD", "python", "/usr/local/bin/mcp_health.py", "http://127.0.0.1:9108/mcp"]
+
+volumes:
+  pgdata:
+  hf-cache:
+  neml-work:
+  neml-artifacts:
+  neml-state:

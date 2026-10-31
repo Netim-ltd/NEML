@@ -1,0 +1,69 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# --- Secrets (§5.4: secrets never enter the tree) ---
+.env
+.env.*
+!.env.example
+!.env.control.example
+!.env.api.example
+*.pem
+*.key
+/etc/neml/fcm.json
+fcm.json
+
+# --- Data: never in git (§15) ---
+data/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# --- .NET ---
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+
+# --- Flutter / Dart ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+mobile/build/
+mobile/ios/Pods/
+mobile/android/.gradle/
+*.iml
+
+# --- ROS 2 / colcon ---
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# --- Generated artifacts ---
+docs/api/*.json
+docs/api/*.yaml
+!docs/api/.gitkeep
+# Ignore the CONTENTS, not the directory: git cannot re-include a file
+# whose parent directory is excluded, so `manufacturing/jobs/` alone
+# would swallow the .gitkeep too (same shape as docs/api above).
+manufacturing/jobs/*
+!manufacturing/jobs/.gitkeep
+*.bak
+
+# --- Editor / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

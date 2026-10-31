@@ -1,0 +1,57 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/genom"
+@inject ApiClient Api
+
+<PageTitle>Genome ağacı — NEML</PageTitle>
+
+<PageHeader Title="Soy ağacı" Help="Her robot tasarımı bir öncekinden türer. Burada hangi sürümün hangisinden geldiğini ve şu an hangisinin etkin olduğunu görürsün." />
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+@if (roots.Length == 0 && error is null)
+{
+    <p class="muted">Genome yok.</p>
+}
+
+<ul class="tree">
+    @foreach (var root in roots)
+    {
+        @Node(root)
+    }
+</ul>
+
+@code {
+    private GenomeNode[] roots = [];
+    private string? error;
+
+    private RenderFragment Node(GenomeNode n) => @<li>
+        <span class="state @(n.Status == "active" ? "running" : null)">@n.Status</span>
+        <strong>@n.Name</strong> v@n.Version
+        <span class="muted">@(n.FitnessScore is { } f ? $"fitness {f:0.###}" : "")</span>
+        @if (n.Children.Count > 0)
+        {
+            <ul>
+                @foreach (var child in n.Children)
+                {
+                    @Node(child)
+                }
+            </ul>
+        }
+    </li>;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            roots = await Api.GetGenomeTreeAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Genome ağacı alınamadı.";
+        }
+    }
+}

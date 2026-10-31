@@ -1,0 +1,36 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Hierarchical platform defaults; tenant overrides require explicit validation.
+
+timezone: Europe/Istanbul
+night_window:
+  start: "23:59"
+  end: "04:59"
+first_prototype:
+  max_parts_cost_usd_exclusive: 50
+model_acceptance:
+  min_sim_success: 0.90
+  min_regression_success: 0.95
+  max_reality_gap: 0.20
+  max_canary_failure: 0.02
+model_budget_tiers:
+  - name: initial
+    max_model_mb: 25
+    min_validated_missions: 0
+  - name: proven
+    max_model_mb: 50
+    min_validated_missions: 100
+  - name: mature
+    max_model_mb: 100
+    min_validated_missions: 1000
+domains:
+  home:
+    require_human_model_deployment: true
+    raw_image_training_allowed: false
+  field:
+    require_human_model_deployment: true
+    raw_image_training_allowed: false
+media:
+  source_cad: freecad
+  renderer: blender
+  outputs: [photo, video, assembly_animation]

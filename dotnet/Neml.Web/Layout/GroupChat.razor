@@ -1,0 +1,45 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@* A meeting of the lab's agents, shown like a group chat: coloured names, bubbles, a divider per round. *@
+<div class="groupchat">
+    @foreach (var line in Lines)
+    {
+        @if (line.Divider is { Length: > 0 })
+        {
+            <div class="gc-divider"><span>@line.Divider</span></div>
+        }
+        <div class="gc-row @(line.Mine ? "mine" : "")">
+            <span class="gc-avatar" style="background:@Colour(line.Who)">@Initial(line.Who)</span>
+            <div class="gc-bubble">
+                <strong style="color:@Colour(line.Who)">@Label(line.Who)</strong>
+                <div class="gc-text">@line.Text</div>
+            </div>
+        </div>
+    }
+    @if (Lines.Count == 0)
+    {
+        <p class="muted">Henüz konuşma yok.</p>
+    }
+</div>
+
+@code {
+    public record ChatLine(string Who, string Text, string? Divider = null, bool Mine = false);
+
+    [Parameter, EditorRequired] public IReadOnlyList<ChatLine> Lines { get; set; } = [];
+
+    private static readonly Dictionary<string, string> Names = new()
+    {
+        ["mekanik"] = "Mekanik mühendis", ["elektronik"] = "Elektronik mühendisi", ["yapisal"] = "Yapısal analizci",
+        ["simulasyon"] = "Simülasyon testçisi", ["uretim"] = "Üretim mühendisi", ["elestirmen"] = "Eleştirmen",
+        ["eleştirmen"] = "Eleştirmen", ["moderator"] = "Moderatör", ["mimar"] = "Mimar", ["malzeme"] = "Malzeme seçici",
+        ["tedarik"] = "Türkiye tedarik", ["yönlendirme"] = "Yönlendirme",
+    };
+
+    private static readonly string[] Palette = ["#53bdeb", "#e9a23b", "#c27ba0", "#7fb069", "#d1604d", "#9a8cdb", "#4fb3a9", "#c9b458"];
+
+    private static string Label(string who) => Names.TryGetValue(who, out var n) ? n : who;
+
+    private static string Initial(string who) => Label(who).Substring(0, 1).ToUpperInvariant();
+
+    private static string Colour(string who) => Palette[(int)((uint)who.Aggregate(7, (h, c) => h * 31 + c) % Palette.Length)];
+}

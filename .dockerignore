@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+.git
+.env
+.env.*
+!.env.example
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/bin
+**/obj
+**/TestResults
+.uv-cache
+secrets
+artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.log

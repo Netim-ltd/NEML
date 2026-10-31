@@ -1,0 +1,18 @@
+{
+  "_note": "Proof corpus: one validated skill whose replay fell 29 points, far outside the SPEC 14.3 5% band. Pointing the suite at this file with NEML_REGRESSION_CORPUS must make `pytest -m regression` fail - that is how gate 7 is shown to detect a regression at all.",
+  "skills": [
+    {"id": "pick_payload@2", "skill_key": "pick_payload", "version": 2, "genome_id": "quadruped_v2", "status": "validated"}
+  ],
+  "skill_validations": [
+    {"id": 1, "skill_id": "pick_payload@2", "env": "sim", "trials": 24, "successes": 22,
+     "ci95_low": 0.7343, "ci95_high": 0.9772, "seeds": [510001, 510002, 510003, 510004, 510005, 510006],
+     "failure_modes": ["grip_slip"], "run_at": "2026-02-10T07:20:00+00:00"},
+    {"id": 2, "skill_id": "pick_payload@2", "env": "sim", "trials": 24, "successes": 15,
+     "ci95_low": 0.4213, "ci95_high": 0.7852, "seeds": [510007, 510008, 510009, 510010, 510011, 510012],
+     "failure_modes": ["grip_slip", "payload_tip"], "run_at": "2026-03-10T07:24:00+00:00"}
+  ],
+  "sim_runs": [
+    {"seed": 510001, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:a3f9..", "deterministic": true},
+    {"seed": 510007, "world_id": "flat", "sim_version": "gz8.7+w:3f91..+u:d204..", "deterministic": true}
+  ]
+}

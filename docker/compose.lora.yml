@@ -1,0 +1,23 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# One-shot GPU training on a separate host. Never schedule this on the 1 CPU control node.
+name: neml-lora
+services:
+  nightly:
+    image: neml/lora-worker:local
+    build:
+      context: ..
+      dockerfile: docker/lora/Dockerfile
+    restart: "no"
+    environment:
+      NEML_FEEDBACK_EXPORT_URL: ${NEML_FEEDBACK_EXPORT_URL:-}
+      NEML_TRAINING_EXPORT_KEY: ${NEML_TRAINING_EXPORT_KEY:-}
+    volumes:
+      - ${NEML_TRAINING_ROOT:?set absolute training root}:/training
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

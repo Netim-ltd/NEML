@@ -1,0 +1,45 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML esp32_aux - ESP-IDF defaults. `idf.py set-target esp32s3` merges this into
+# sdkconfig, which is generated and not committed (see .gitignore).
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- micro-ROS (micro_ros_espidf_component) ---------------------------------
+# Serial transport to the Raspberry Pi 5 agent. This board has no business on
+# the WiFi: SPEC 17.2 keeps the swarm network for ROS 2 over zenoh, and an aux
+# MCU with a radio is one more thing that can be reached from outside.
+CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE=y
+CONFIG_MICRO_ROS_ESP_NETIF_WLAN=n
+CONFIG_MICRO_ROS_ESP_NETIF_ENET=n
+CONFIG_MICRO_ROS_APP_STACK=16000
+CONFIG_MICRO_ROS_APP_TASK_PRIO=5
+
+# --- Radios off --------------------------------------------------------------
+CONFIG_ESP_WIFI_ENABLED=n
+CONFIG_BT_ENABLED=n
+
+# --- Timing ------------------------------------------------------------------
+# 1000 Hz tick so pdMS_TO_TICKS(10) is exactly 10 ms: the e-stop line publishes
+# at 100 Hz and neml_safety budgets that sample in its 50 ms T-074 chain.
+CONFIG_FREERTOS_HZ=1000
+
+# --- Watchdogs ---------------------------------------------------------------
+# A wedged aux MCU must come back, not sit there quietly not reporting. It holds
+# no state worth keeping. Note this is telemetry only: the L0 relay of SPEC 5.1
+# is the ATmega328P and does not care whether this chip is alive.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=5
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+
+# --- Flash / partitions ------------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# --- Console -----------------------------------------------------------------
+# UART0 keeps the log; UART1 is the micro-ROS transport and must stay clean.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

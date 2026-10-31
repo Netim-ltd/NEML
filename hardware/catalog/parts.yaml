@@ -1,0 +1,183 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Product catalog for the bill of materials of the 3D model page: where to buy or read about each
+# part, its main technical specifications, and the fasteners the design needs.
+#
+# Rules:
+#   * `specs` come from the manufacturer's published data or from this repo's own genome/templates;
+#     verify against the datasheet before ordering (the panel says so).
+#   * `kind: uretici` is the manufacturer's page, `kind: arama` is a retailer search for the exact
+#     model name, used where no stable product page is known. No price is stored: prices drift.
+#   * Fasteners are DESIGN ASSUMPTIONS (the CAD templates only fix a 3.2 mm M3 clearance hole);
+#     the counts are `tahmini` until the assembly CAD exists.
+
+parts:
+  rpi5:
+    title: Raspberry Pi 5 (8 GB)
+    maker: Raspberry Pi
+    links:
+      - {label: Üretici sayfası, url: "https://www.raspberrypi.com/products/raspberry-pi-5/", kind: uretici}
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=raspberry+pi+5+8gb", kind: arama}
+    specs:
+      - "Broadcom BCM2712, 4 çekirdek Cortex-A76, 2,4 GHz"
+      - "8 GB LPDDR4X RAM"
+      - "5 V / 5 A USB-C besleme (resmî 27 W adaptör önerilir)"
+      - "85 × 56 mm, 40 pinli GPIO, PCIe 2.0 x1, 2× USB 3.0, 2× USB 2.0"
+  stm32f446:
+    title: STM32F446 (hareket denetleyicisi)
+    maker: STMicroelectronics
+    links:
+      - {label: Üretici sayfası (F446RE), url: "https://www.st.com/en/microcontrollers-microprocessors/stm32f446re.html", kind: uretici}
+      - {label: Robotistan'da ara (Nucleo-F446RE), url: "https://www.robotistan.com/arama?q=nucleo+f446re", kind: arama}
+    specs:
+      - "ARM Cortex-M4F, 180 MHz, FPU"
+      - "512 KB flash, 128 KB SRAM (F446RE)"
+      - "1,8–3,6 V çalışma gerilimi"
+      - "Bu projede 1 kHz hareket döngüsünü yürütür (micro-ROS)"
+  esp32s3:
+    title: ESP32-S3 (yardımcı kart)
+    maker: Espressif
+    links:
+      - {label: Üretici sayfası, url: "https://www.espressif.com/en/products/socs/esp32-s3", kind: uretici}
+      - {label: DevKitC-1 belgesi, url: "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/index.html", kind: uretici}
+    specs:
+      - "Çift çekirdek Xtensa LX7, 240 MHz'e kadar"
+      - "Wi-Fi 802.11 b/g/n, Bluetooth 5 (LE)"
+      - "3,3 V mantık gerilimi"
+  atmega328p:
+    title: ATmega328P (güvenlik gözcüsü)
+    maker: Microchip
+    links:
+      - {label: Üretici sayfası, url: "https://www.microchip.com/en-us/product/ATmega328P", kind: uretici}
+      - {label: Arduino Nano (hazır kart), url: "https://store.arduino.cc/products/arduino-nano", kind: uretici}
+    specs:
+      - "8 bit AVR, 20 MHz'e kadar (16 MHz yaygın)"
+      - "32 KB flash, 2 KB SRAM"
+      - "1,8–5,5 V çalışma gerilimi"
+      - "Bu projede bağımsız watchdog: ana bilgisayardan bağımsız acil durdurma"
+  sts3215:
+    title: Feetech STS3215 servo
+    maker: Feetech
+    links:
+      - {label: Üretici sitesi, url: "https://www.feetechrc.com/", kind: uretici}
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=sts3215", kind: arama}
+      - {label: AliExpress'te ara, url: "https://www.aliexpress.com/wholesale?SearchText=STS3215", kind: arama}
+    specs:
+      - "Kalkış torku 2,9 Nm (genom verisi; ≈ 30 kg·cm)"
+      - "12 bit manyetik enkoder, 360° konum geri bildirimi"
+      - "Seri TTL yarı çift yönlü bus, en çok 1 Mbps"
+      - "Gövde ≈ 45 × 25 × 35 mm"
+      - "Bu projede bus gerilimi en çok 8,4 V (connector_board_v1 sınırı)"
+  bno085:
+    title: BNO085 IMU
+    maker: CEVA / Hillcrest
+    links:
+      - {label: Adafruit kartı, url: "https://www.adafruit.com/product/4754", kind: uretici}
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=bno085", kind: arama}
+    specs:
+      - "9 eksenli sensör füzyonlu IMU (ivme, jiroskop, manyetometre)"
+      - "I²C / SPI / UART, 3,3 V"
+      - "Bu projede 100 Hz örnekleme"
+  d405:
+    title: Intel RealSense D405
+    maker: Intel RealSense
+    links:
+      - {label: Üretici sayfası, url: "https://www.intelrealsense.com/depth-camera-d405/", kind: uretici}
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=realsense+d405", kind: arama}
+    specs:
+      - "Yakın mesafe derinlik kamerası, çalışma aralığı ≈ 7–50 cm"
+      - "USB-C 3.1, 42 × 42 × 23 mm"
+      - "Bu projede 15 Hz"
+  ina226:
+    title: INA226 akım/güç sensörü
+    maker: Texas Instruments
+    links:
+      - {label: Üretici sayfası, url: "https://www.ti.com/product/INA226", kind: uretici}
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=ina226", kind: arama}
+    specs:
+      - "16 bit akım, gerilim ve güç ölçer, I²C"
+      - "Yol gerilimi en çok 36 V (sensor_breakout_v1 sınırı)"
+      - "Harici şönt direnci ile ölçülür (şablon: shunt_mohm, shunt_current_a)"
+  lipo_4s:
+    title: LiPo batarya 4S 5200 mAh 25C
+    maker: çeşitli
+    links:
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=lipo+4s+5200mah", kind: arama}
+      - {label: AliExpress'te ara, url: "https://www.aliexpress.com/wholesale?SearchText=4S+5200mAh+25C+lipo", kind: arama}
+    specs:
+      - "Nominal 14,8 V, tam dolu 16,8 V; enerji ≈ 77 Wh (4 hücre × 3,7 V × 5,2 Ah)"
+      - "25C deşarj: sürekli ≈ 130 A (5,2 Ah × 25)"
+      - "BMS zorunlu (genom: bms required); dengeleme ve düşük gerilim kesmesi olmadan şarj/deşarj etme"
+  buck_5v5a:
+    title: Buck dönüştürücü modülü 5 V / 5 A
+    maker: çeşitli
+    links:
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=5v+5a+buck", kind: arama}
+      - {label: Pololu step-down kategorisi, url: "https://www.pololu.com/category/131/step-down-voltage-regulators", kind: uretici}
+    specs:
+      - "Hazır modül (SPEC 13.1: sıfırdan anahtarlamalı kaynak tasarlanmaz)"
+      - "Girişte 6,5 V üstü gerekir (güç kartı: 1,5 V pay)"
+      - "Çıkış 5,0 V, en çok 5 A"
+  ldo_3v3:
+    title: LDO regülatör 3,3 V
+    maker: çeşitli
+    links:
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=ams1117+3.3v", kind: arama}
+    specs:
+      - "Doğrusal regülatör, çıkış 3,3 V, en çok 2 A (güç kartı sınırı)"
+      - "Isı sınırlı: bakır dökümde ≈ 4 W'a kadar (güç kartı şablonu varsayımı)"
+  pa6cf:
+    title: PA6-CF filament (bacak bağlantıları)
+    maker: çeşitli
+    links:
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=pa6+cf+filament", kind: arama}
+    specs:
+      - "Karbon elyaf takviyeli naylon; yoğunluk 1,17 g/cm³ (genom)"
+      - "Sertleştirilmiş nozul, filament kurutucu ve kapalı hazne gerekir (DFM kuralı pa6cf_process)"
+  tpu:
+    title: TPU filament (ayak pedleri)
+    maker: çeşitli
+    links:
+      - {label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=tpu+filament", kind: arama}
+    specs:
+      - "Esnek baskı malzemesi; yoğunluk 1,21 g/cm³"
+
+# Bağlantı elemanları: sayılar tasarım varsayımıdır (tahmini).
+fasteners:
+  - key: m3_screw_servo
+    title: M3 × 8 soket başlı vida (servo bağlantısı)
+    qty_per: {servo: 4}
+    basis: "Servo başına 4 bağlantı; CAD'de 3,2 mm M3 boşluk deliği tanımlı"
+    specs: ["Paslanmaz A2, ISO 4762", "Anahtar 2,5 mm"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=m3x8+vida", kind: arama}]
+  - key: m3_insert
+    title: M3 gömme somun (ısıyla yerleştirilen, M3 × 5,7)
+    qty_per: {servo: 4}
+    basis: "Basılı parçalara yerleştirilir; vida başına bir adet"
+    specs: ["Pirinç, iç diş M3", "Havya ucuyla yerleştirilir"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=m3+heat+set+insert", kind: arama}]
+  - key: m3_screw_link
+    title: M3 × 10 soket başlı vida (bacak mafsalı)
+    qty_per: {leg_link: 2}
+    basis: "Bacak bağlantısı başına 2 mafsal vidası (enine mafsal deliği, 3,2 mm)"
+    specs: ["Paslanmaz A2, ISO 4762"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=m3x10+vida", kind: arama}]
+  - key: m3_screw_shell
+    title: M3 × 10 vida (gövde kabuğu)
+    qty_fixed: 8
+    basis: "Kabuk köşelerinde ve kenarlarında 8 nokta (varsayım)"
+    specs: ["Paslanmaz A2, ISO 4762"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=m3x10+vida", kind: arama}]
+  - key: m25_standoff
+    title: M2,5 × 11 mesafe pulu + vida (Raspberry Pi)
+    qty_fixed: 4
+    basis: "Raspberry Pi'nin 4 montaj deliği (58 × 49 mm aralık)"
+    specs: ["M2,5 erkek-dişi pul", "M2,5 × 6 vida ×4"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=m2.5+mesafe+pulu", kind: arama}]
+  - key: strap
+    title: Batarya bağlama bandı (cırt)
+    qty_fixed: 2
+    basis: "Bataryayı gövdede sabitler"
+    specs: ["Cırt bant, ≈ 20 mm genişlik"]
+    links: [{label: Robotistan'da ara, url: "https://www.robotistan.com/arama?q=lipo+bataryasi+cirt+bant", kind: arama}]

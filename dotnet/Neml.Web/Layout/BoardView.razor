@@ -1,0 +1,102 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@using System.Text.Json
+@using System.Globalization
+
+@* The board drawn from its own data (pads, tracks, vias read from the .kicad_pcb), so a net can be picked and followed. *@
+<div class="boardview">
+    <div class="boardview-bar">
+        <span class="muted">Katman</span>
+        @foreach (var (key, label) in Layers)
+        {
+            <button class="@(layer == key ? "primary" : "ghost")" type="button" @onclick="() => layer = key">@label</button>
+        }
+        <label class="boardview-zoom">Yakınlık <input type="range" min="1" max="6" step="0.5" @bind="zoom" @bind:event="oninput" /></label>
+        <label class="boardview-check"><input type="checkbox" @bind="labels" /> Parça adları</label>
+    </div>
+    <div class="boardview-nets">
+        <button class="@(net is null ? "primary" : "ghost")" type="button" @onclick="() => net = null">Tüm ağlar</button>
+        @foreach (var n in Nets)
+        {
+            <button class="@(net == n ? "primary" : "ghost")" type="button" @onclick="() => net = net == n ? null : n">@n</button>
+        }
+    </div>
+    <div class="boardview-scroll">
+        <svg viewBox="0 0 @F(W) @F(H)" style="width:@(F(zoom * 100))%;min-width:100%" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="@F(W)" height="@F(H)" fill="#0d3b2e" stroke="#e2b341" stroke-width="0.3" rx="0.6" />
+            @foreach (var t in Tracks)
+            {
+                <line x1="@F(t.X1)" y1="@F(t.Y1)" x2="@F(t.X2)" y2="@F(t.Y2)" stroke="@(t.Back ? "#4a8fe7" : "#e5534b")" stroke-width="@F(t.W)" stroke-linecap="round" opacity="@Dim(t.Net)" />
+            }
+            @foreach (var v in Vias)
+            {
+                <circle cx="@F(v.X)" cy="@F(v.Y)" r="@F(v.D / 2)" fill="#c9b458" opacity="@Dim(v.Net)" />
+                <circle cx="@F(v.X)" cy="@F(v.Y)" r="@F(v.D / 4)" fill="#0d3b2e" opacity="@Dim(v.Net)" />
+            }
+            @foreach (var p in Pads)
+            {
+                <rect x="@F(p.X - p.W / 2)" y="@F(p.Y - p.H / 2)" width="@F(p.W)" height="@F(p.H)" rx="@(p.Tht ? F(Math.Min(p.W, p.H) / 2) : "0.08")"
+                      fill="@(p.Tht ? "#d8c46a" : "#e0a05a")" opacity="@Dim(p.Net)" @onclick="() => net = net == p.Net ? null : p.Net"><title>@p.Ref · @p.Net</title></rect>
+            }
+            @if (labels)
+            {
+                @foreach (var (name, x, y) in Parts)
+                {
+                    @Label(name, x, y)
+                }
+            }
+        </svg>
+    </div>
+    <p class="muted">
+        @(Tracks.Count) iz · @(Vias.Count) via · @(Pads.Count) ped · @W.ToString("0.#", CultureInfo.InvariantCulture) × @H.ToString("0.#", CultureInfo.InvariantCulture) mm.
+        <span style="color:#e5534b">■</span> üst bakır <span style="color:#4a8fe7">■</span> alt bakır <span style="color:#c9b458">■</span> via.
+        Bir pede ya da ağ düğmesine tıklayınca o ağ öne çıkar.
+    </p>
+</div>
+
+@code {
+    private static readonly (string, string)[] Layers = [("both", "İkisi"), ("F.Cu", "Üst"), ("B.Cu", "Alt")];
+
+    [Parameter, EditorRequired] public JsonElement Geometry { get; set; }
+    [Parameter] public double W { get; set; } = 40;
+    [Parameter] public double H { get; set; } = 40;
+
+    private string layer = "both";
+    private string? net;
+    private double zoom = 1;
+    private bool labels = true;
+
+    private record Trk(string Net, bool Back, double X1, double Y1, double X2, double Y2, double W);
+    private record ViaPt(string Net, double X, double Y, double D);
+    private record PadPt(string Ref, string Net, double X, double Y, double W, double H, bool Tht);
+
+    // <text> is a Razor keyword, so the SVG label goes through MarkupString
+    private static MarkupString Label(string name, double x, double y) =>
+        new($"<text x=\"{F(x)}\" y=\"{F(y)}\" font-size=\"1.1\" fill=\"#fff\" text-anchor=\"middle\" paint-order=\"stroke\" stroke=\"#000\" stroke-width=\"0.18\">{System.Net.WebUtility.HtmlEncode(name)}</text>");
+
+    private static string F(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+    private static double N(JsonElement e) => e.ValueKind == JsonValueKind.Number ? e.GetDouble() : 0;
+    private string Dim(string n) => net is null || net == n ? "1" : "0.18";
+
+    private List<Trk> Tracks => Items("tracks")
+        .Select(t => new Trk(t[0].GetString() ?? "", t[1].GetString() == "B.Cu", N(t[2]), N(t[3]), N(t[4]), N(t[5]), N(t[6])))
+        .Where(t => layer == "both" || (layer == "B.Cu") == t.Back).ToList();
+
+    private List<ViaPt> Vias => Items("vias").Select(v => new ViaPt(v[0].GetString() ?? "", N(v[1]), N(v[2]), N(v[3]))).ToList();
+
+    private List<PadPt> Pads => Items("pads")
+        .Select(p => new PadPt(p[5].GetString() ?? "", p[4].GetString() ?? "", N(p[0]), N(p[1]), N(p[2]), N(p[3]), p[6].GetString() == "tht"))
+        .Where(p => layer != "B.Cu" || p.Tht).ToList();
+
+    private IEnumerable<(string, double, double)> Parts =>
+        Geometry.ValueKind == JsonValueKind.Object && Geometry.TryGetProperty("parts", out var parts) && parts.ValueKind == JsonValueKind.Object
+            ? parts.EnumerateObject().Select(p => (p.Name, N(p.Value[0]), N(p.Value[1]) - 1.4)).ToList()
+            : [];
+
+    private List<string> Nets => Items("pads").Select(p => p[4].GetString() ?? "").Where(n => n.Length > 0).Distinct().Order().ToList();
+
+    private IEnumerable<JsonElement> Items(string key) =>
+        Geometry.ValueKind == JsonValueKind.Object && Geometry.TryGetProperty(key, out var a) && a.ValueKind == JsonValueKind.Array
+            ? a.EnumerateArray().ToList()
+            : [];
+}

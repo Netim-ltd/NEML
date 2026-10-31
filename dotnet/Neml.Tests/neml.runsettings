@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<RunSettings>
+  <RunConfiguration>
+    <!--
+      The runtimeconfig rollForward only governs the frameworks the test assembly itself
+      names. Microsoft.AspNetCore.App drags in its own pinned Microsoft.NETCore.App patch,
+      and on a machine whose two shared frameworks sit at different patch levels that pinned
+      version is missing and testhost dies before collecting a single test. The environment
+      variable is the only knob that reaches those framework-to-framework references.
+    -->
+    <EnvironmentVariables>
+      <DOTNET_ROLL_FORWARD>LatestMajor</DOTNET_ROLL_FORWARD>
+    </EnvironmentVariables>
+  </RunConfiguration>
+
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <!--
+        SPEC 18.1 puts the .NET unit level at 75%. The EF migration and the model snapshot are
+        scaffolder output, thousands of lines nobody wrote and Database.Migrate() executes for
+        free; leaving them in makes the percentage meaningless in both directions.
+      -->
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+          <SkipAutoProps>true</SkipAutoProps>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

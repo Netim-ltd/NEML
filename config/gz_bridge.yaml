@@ -1,0 +1,83 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# NEML_SPEC.md §11.1 — ros_gz_bridge topic map, §17.2 QoS classes.
+# Topic names follow the §17.2 wildcard classes on purpose: the class is
+# readable from the name alone. <ns> is the robot namespace (r01, r02, ...).
+#
+# ponytail: ros_gz_bridge in Jazzy has no per-entry QoS field. The `qos` key
+# below is the declaration of intent; neml_bringup applies the matching
+# profile when it starts the bridge node. If upstream ever adds native QoS
+# support, drop the wrapper and keep this file as-is.
+
+# §17.1 — Gazebo transport is a localhost-only service. The port is pinned here
+# rather than left to the default so it is verifiable from the tree; neml_bringup
+# exports these before it starts `gz sim` and the bridge node, exactly as it
+# applies the qos profiles below.
+#
+# ponytail: §17.1 names 11345, which is the Gazebo *Classic* master port, while
+# §11.1 selects Gazebo Harmonic, whose transport discovers over its own UDP
+# ports. The spec number is kept verbatim and reported as a contradiction; the
+# binding that actually matters (GZ_IP=127.0.0.1) is what keeps it off the LAN.
+transport:                       # §17.1
+  env:
+    GZ_IP: "127.0.0.1"           # bind to loopback only - never the swarm LAN
+    GZ_PARTITION: "neml"         # one lab, one partition
+    GZ_DISCOVERY_MSG_PORT: 11345 # §17.1 port table
+    GZ_DISCOVERY_SRV_PORT: 11346 # the srv channel sits one above the msg channel
+
+qos_profiles:                    # §17.2
+  telemetry: {reliability: best_effort, durability: volatile, history: keep_last, depth: 1}
+  cmd:       {reliability: reliable,    durability: volatile, history: keep_last, depth: 10}
+  state:     {reliability: reliable,    durability: transient_local, history: keep_last, depth: 1}
+  camera:    {reliability: best_effort, durability: volatile, history: keep_last, depth: 1}
+
+bridges:
+  # --- clock: sim time only, never wall clock (§11.2 rule 4) ---
+  - ros_topic_name: "/clock"
+    gz_topic_name: "/clock"
+    ros_type_name: "rosgraph_msgs/msg/Clock"
+    gz_type_name: "gz.msgs.Clock"
+    direction: GZ_TO_ROS
+    qos: state                   # §17.2 does not classify /clock; state is the
+                                 # closest match (late joiners need the value).
+
+  # --- imu ---
+  - ros_topic_name: "/<ns>/telemetry/imu"
+    gz_topic_name: "/world/<world>/model/<ns>/link/base_link/sensor/imu/imu"
+    ros_type_name: "sensor_msgs/msg/Imu"
+    gz_type_name: "gz.msgs.IMU"
+    direction: GZ_TO_ROS
+    qos: telemetry
+
+  # --- encoders (joint position/velocity/effort) ---
+  - ros_topic_name: "/<ns>/telemetry/joint_states"
+    gz_topic_name: "/world/<world>/model/<ns>/joint_state"
+    ros_type_name: "sensor_msgs/msg/JointState"
+    gz_type_name: "gz.msgs.Model"
+    direction: GZ_TO_ROS
+    qos: telemetry
+
+  # --- foot contacts ---
+  - ros_topic_name: "/<ns>/telemetry/contacts"
+    gz_topic_name: "/world/<world>/model/<ns>/link/foot/sensor/contact/contact"
+    ros_type_name: "ros_gz_interfaces/msg/Contacts"
+    gz_type_name: "gz.msgs.Contacts"
+    direction: GZ_TO_ROS
+    qos: telemetry
+
+  # --- lidar (2D scan; only active in the `lidar` sim profile, §4.5) ---
+  - ros_topic_name: "/<ns>/telemetry/scan"
+    gz_topic_name: "/world/<world>/model/<ns>/link/lidar_link/sensor/lidar/scan"
+    ros_type_name: "sensor_msgs/msg/LaserScan"
+    gz_type_name: "gz.msgs.LaserScan"
+    direction: GZ_TO_ROS
+    qos: telemetry
+
+  # --- cmd: the only ROS -> GZ direction ---
+  - ros_topic_name: "/<ns>/cmd/vel"
+    gz_topic_name: "/model/<ns>/cmd_vel"
+    ros_type_name: "geometry_msgs/msg/Twist"
+    gz_type_name: "gz.msgs.Twist"
+    direction: ROS_TO_GZ
+    qos: cmd

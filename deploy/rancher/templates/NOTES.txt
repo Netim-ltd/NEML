@@ -1,0 +1,10 @@
+{{/* Copyright (c) 2026 Mustafa Gulsoy. */}}
+{{/* SPDX-License-Identifier: AGPL-3.0-or-later */}}
+NEML brain is private at {{ .Release.Name }}-brain.{{ .Release.Namespace }}.svc.
+The migration Job runs before each install or upgrade.
+Use a separate namespace, database and Secret for each firm.
+{{- if .Values.edgeIngress.enabled }}
+Only the three signed model transport routes are exposed at https://{{ .Values.edgeIngress.host }}.
+{{- else }}
+External model transport is disabled. Provide a trusted TLS Secret and enable edgeIngress only after device enrollment.
+{{- end }}

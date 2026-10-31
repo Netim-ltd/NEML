@@ -1,0 +1,66 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/loglar"
+@inject ApiClient Api
+
+<PageTitle>Loglar — NEML</PageTitle>
+
+<PageHeader Title="Kayıtlar ve denetim" Help="Kim ne zaman ne yaptı: onaylar, komutlar ve sistem olayları. Filtreleyerek bir olayın izini sürebilirsin." />
+
+@if (error is not null)
+{
+    <p class="error" role="alert">@error</p>
+}
+
+<div class="tabs" role="tablist">
+    @foreach (var (key, label) in Tabs)
+    {
+        <button role="tab" aria-selected="@(key == tab)" class="@(key == tab ? "active" : null)" @onclick="() => tab = key">@label</button>
+    }
+</div>
+
+<label>
+    Filtre (aktör, eylem, hedef)
+    <input @bind="query" @bind:event="oninput" />
+</label>
+
+<table>
+    <thead><tr><th>Zaman</th><th>Aktör</th><th>Eylem</th><th>Hedef</th><th>Sonuç</th><th>ms</th></tr></thead>
+    <tbody>
+        @foreach (var e in ViewLogic.FilterAudit(entries, tab, query))
+        {
+            <tr>
+                <td class="muted">@e.Ts.ToLocalTime().ToString("MM-dd HH:mm:ss")</td>
+                <td>@e.Actor</td><td>@e.Action</td><td class="muted">@e.Target</td>
+                <td class="@(e.IsError ? "error" : null)">@e.Outcome</td>
+                <td class="muted">@e.DurationMs</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("audit", "Denetim"),
+        ("tools", "Araç çağrıları"),
+        ("errors", "Hatalar"),
+    ];
+
+    private AuditEntry[] entries = [];
+    private string tab = "audit";
+    private string query = "";
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            entries = await Api.GetAuditAsync();
+        }
+        catch (HttpRequestException)
+        {
+            error = "Denetim günlüğü alınamadı.";
+        }
+    }
+}

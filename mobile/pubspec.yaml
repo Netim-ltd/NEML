@@ -1,0 +1,61 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Dependency set is fixed by NEML_SPEC.md section 10.1. Do not add packages
+# the spec does not name.
+
+name: neml_mobile
+description: "NEML operator app - robots, tasks, approvals, telemetry."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  # Floor is the oldest SDK this source actually compiles on: lib/ uses
+  # null-aware elements, which landed in Dart 3.9 (NEML_SPEC.md section 10.1
+  # states 3.5+, but the source cannot be built by it).
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State
+  # NEML_SPEC.md section 10.1 names Riverpod 2. Pinning ^2.x does not build:
+  # on v2 `AsyncValue.value` throws for an error state (v3 returns null), which
+  # router.dart, auth.dart, dio_client.dart and five notifiers rely on. Staying
+  # on 3.x until those call sites move to `valueOrNull`.
+  flutter_riverpod: ^3.4.3
+  # Routing
+  go_router: ^18.0.1
+  # HTTP
+  dio: ^5.11.1
+  dio_smart_retry: ^7.0.1
+  # Realtime (SignalR hub, section 9.4)
+  signalr_netcore: ^1.4.4
+  # Charts
+  fl_chart: ^1.2.0
+  # Secure token storage
+  flutter_secure_storage: ^11.1.1
+  # Local cache (section 10.3)
+  drift: ^2.35.0
+  drift_flutter: ^0.3.1
+  sqlite3_flutter_libs: ^0.6.0+eol
+  # Push (section 10.4)
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
+  flutter_local_notifications: ^22.3.1
+  # i18n - TR primary, EN secondary
+  intl: ^0.20.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  mocktail: ^1.0.5
+
+flutter:
+  uses-material-design: true
+  # Generates AppLocalizations from lib/l10n/*.arb (section 10.1).
+  generate: true

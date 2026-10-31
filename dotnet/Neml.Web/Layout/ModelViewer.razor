@@ -1,0 +1,787 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+@inject TokenStore Tokens
+@inject ApiClient Api
+@inject AssistantState Assistant
+@using System.Globalization
+@using System.Text
+@using System.Text.Json
+
+<div class="viewer-box">
+    <div class="viewer" @ref="host"></div>
+    @if (loading)
+    {
+        <p class="muted viewer-note">3B model yükleniyor…@(totalParts > 0 ? $" {loadedParts}/{totalParts} parça" : "")</p>
+    }
+    @if (error is not null)
+    {
+        <p class="error" role="alert">@error</p>
+    }
+</div>
+
+<div class="viewer-controls">
+    <label>Patlatma
+        <input type="range" min="0" max="100" value="@explode" @oninput="OnExplode" />
+    </label>
+    <button class="primary" @onclick='() => PlayAsync("explode")'>Patlat / toplan animasyonu</button>
+    <button class="primary" @onclick='() => PlayAsync("assembly")'>Montaj animasyonu</button>
+    <button class="ghost" @onclick='() => PlayAsync(null)'>Durdur</button>
+    <label>Gövde şeffaflığı
+        <input type="range" min="0" max="100" value="@shell" @oninput="OnShell" />
+    </label>
+    <label class="chip"><input type="checkbox" @onchange="OnWireframe" /> Tel kafes</label>
+</div>
+
+@if (wiring.Length > 0)
+{
+    <section class="card">
+        <h3>Kablolama: hangi kart neye bağlanır</h3>
+        <button class="ghost" @onclick="() => ShowWiresAsync(-1)">Tüm kabloları göster</button>
+        <button class="ghost" @onclick="() => ShowWiresAsync(-2)">Kabloları gizle</button>
+        <table>
+            <thead><tr><th>Kimden</th><th>Kime</th><th>Hat</th><th>Pin (kimden)</th><th>Pin (kime)</th><th>Kablo</th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < wiring.Length; i++)
+                {
+                    var n = i;
+                    var w = wiring[i];
+                    <tr @onclick="() => ShowWiresAsync(n)" style="@(wireIndex == n ? "cursor:pointer;background:rgba(0,122,255,.15)" : "cursor:pointer")">
+                        <td>@Label(w.GetProperty("a").GetString()!)</td>
+                        <td>@Label(w.GetProperty("b").GetString()!)</td>
+                        <td>@w.GetProperty("signal").GetString()</td>
+                        <td>@w.GetProperty("pin_a").GetString()</td>
+                        <td>@w.GetProperty("pin_b").GetString()</td>
+                        <td>@w.GetProperty("wire").GetString()</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (wireIndex >= 0 && wiring[wireIndex].GetProperty("note").GetString() is { Length: > 0 } wnote)
+        {
+            <p>@wnote</p>
+        }
+        <p class="muted">Satıra tıkla: o kablo 3B'de renkli çizgiyle görünür. Pinler seçilen kartların olağan portlarıdır (ör. Pi 5 GPIO14/15 UART); kartın pinout belgesiyle doğrula.</p>
+    </section>
+}
+
+<section class="card">
+    <h3>Montaj: vidalar ve bağlantılar</h3>
+    <button class="ghost" @onclick="ToggleFastenersAsync">@(fasteners is null ? "Vida planını göster" : "Vida planını gizle")</button>
+    @if (fasteners is not null)
+    {
+        @if (fasteners.Length == 0)
+        {
+            <p class="muted">Bu tasarımda gösterilecek bağlantı yok.</p>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>#</th><th>Parça</th><th>Nereye</th><th>Vida</th><th>Adet</th></tr></thead>
+                <tbody>
+                    @foreach (var f in fasteners)
+                    {
+                        <tr @onclick="() => ShowFastenerAsync(f.GetProperty(StepKey).GetInt32())" style="@RowStyle(f)">
+                            <td>@f.GetProperty("step").GetInt32()</td>
+                            <td>@f.GetProperty("part").GetString()</td>
+                            <td>@f.GetProperty("host").GetString()</td>
+                            <td>@f.GetProperty("screw").GetString()</td>
+                            <td>@f.GetProperty("qty").GetInt32()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (fastenerStep is { } st)
+            {
+                <p>@fasteners.First(f => f.GetProperty("step").GetInt32() == st).GetProperty("note").GetString()</p>
+            }
+            <p class="muted">Satıra tıkla: vidaların gireceği yerler 3B'de turuncu noktalarla görünür. Konumlar tasarımdaki köşe/kulak delikleridir (ölçülmüş delik haritası değil); içe aktarılan robotlarda sabit eklemler vida/yapıştırma yeri, hareketli eklemler servo bağlantısı olarak önerilir.</p>
+        }
+    }
+</section>
+
+@if (joints.Count > 0)
+{
+    <section class="card">
+        <h3>Eklem pozu</h3>
+        <p class="muted">@joints.Count hareketli eklem. Kaydırıcılar robotu o pozda gösterir; sıfır poz, URDF'deki montaj halidir. Pozlar lab'da saklanır (her tarayıcıdan görünür).</p>
+        <div class="viewer-controls">
+            <button class="ghost" @onclick="ResetPoseAsync">Sıfır poz</button>
+            <button class="ghost" @onclick="RandomPoseAsync">Rastgele poz</button>
+            <button class="primary" @onclick='() => PlayAsync("wiggle")'>Eklemleri oynat</button>
+            <button class="ghost" @onclick='() => PlayAsync(null)'>Durdur</button>
+            <button class="ghost" @onclick="ExportPoseAsync">Pozu indir (JSON)</button>
+        </div>
+        <div class="viewer-controls">
+            <strong>Fizik:</strong>
+            <button class="ghost" @onclick="AnalyzeAsync">Çarpışma ve denge denetimi</button>
+            <button class="ghost" @onclick="DropAsync">Yere indir</button>
+            <label class="chip"><input type="checkbox" @bind="autoCheck" /> Poz değişince otomatik denetle</label>
+            <label class="chip"><input type="checkbox" @bind="showCom" /> Ağırlık merkezini göster (kırmızı top)</label>
+            <button class="ghost" @onclick="ClearAnalysisAsync">Temizle</button>
+        </div>
+        @if (analysis is { ValueKind: JsonValueKind.Object } a)
+        {
+            <div class="card">
+                @{
+                    var hits = a.GetProperty("collisions").EnumerateArray().Select(c => $"{c[0].GetString()} ↔ {c[1].GetString()}").ToList();
+                }
+                <p>
+                    @if (hits.Count == 0)
+                    {
+                        <span class="state ok">Çarpışma yok</span>
+                    }
+                    else
+                    {
+                        <span class="state warn">@hits.Count çarpışma</span> <span class="muted">(kırmızı parçalar)</span>
+                    }
+                </p>
+                @if (hits.Count > 0)
+                {
+                    <ul>@foreach (var h in hits.Take(12)) { <li>@h</li> }</ul>
+                }
+                @if (a.GetProperty("com").ValueKind == JsonValueKind.Array)
+                {
+                    var com = a.GetProperty("com").EnumerateArray().Select(v => v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0).ToArray();
+                    <p>
+                        Kütle <strong>@Dbl(a, "mass").ToString("0.###", Inv)@(a.GetProperty("massEstimated").ValueKind == JsonValueKind.True ? " (parça hacimlerinden bağıl)" : " kg")</strong>
+                        · ağırlık merkezi (mm): @com[0].ToString("0", Inv), @com[1].ToString("0", Inv), @com[2].ToString("0", Inv)
+                        @if (a.GetProperty("height").ValueKind == JsonValueKind.Number)
+                        {
+                            <text> · zeminden @Dbl(a, "height").ToString("0", Inv) mm yukarıda</text>
+                        }
+                    </p>
+                }
+                @if (a.GetProperty("stable").ValueKind is JsonValueKind.True)
+                {
+                    <p><span class="state ok">Ayakta durur</span> ağırlık merkezi destek çokgeninin @Dbl(a, "margin").ToString("0", Inv) mm içinde.</p>
+                }
+                else if (a.GetProperty("stable").ValueKind is JsonValueKind.False)
+                {
+                    @if (a.TryGetProperty("margin", out var mg) && mg.ValueKind == JsonValueKind.Number)
+                    {
+                        <p><span class="state warn">Devrilir</span> ağırlık merkezi destek çokgeninin dışında ya da kenarında (@mg.GetDouble().ToString("0", Inv) mm).</p>
+                    }
+                    else
+                    {
+                        <p><span class="state warn">Devrilir</span> zeminde destek çokgeni oluşturacak kadar (en az üç) temas noktası yok.</p>
+                    }
+                }
+                <p class="muted">Parçaların sınır kutularına göre tahmindir: kutular gerçek yüzeyden büyük olabilir. Dinamik fizik (sürtünme, devrilme anı, motor torku) hesaplanmaz; URDF kütleleri yoksa kütle parça hacimlerinden bağıl alınır.</p>
+            </div>
+        }
+        <div class="pose-joints">
+            @foreach (var j in joints)
+            {
+                <label>
+                    @j.Name <span class="muted">(@Unit(j))</span>
+                    <input type="range" min="@Ui(j, j.Lower).ToString("0.##", Inv)" max="@Ui(j, j.Upper).ToString("0.##", Inv)"
+                           step="@(j.Type == "prismatic" ? "1" : "1")" value="@Ui(j, poseValues.GetValueOrDefault(j.Name)).ToString("0.##", Inv)"
+                           @oninput="e => OnJointAsync(j, e)" />
+                    <span>@Ui(j, poseValues.GetValueOrDefault(j.Name)).ToString("0", Inv)</span>
+                </label>
+            }
+        </div>
+        <div class="viewer-controls">
+            <input placeholder="Poz adı" maxlength="40" style="width:10rem" @bind="poseName" @bind:event="oninput" />
+            <button class="ghost" disabled="@string.IsNullOrWhiteSpace(poseName)" @onclick="SavePoseAsync">Pozu kaydet</button>
+            @if (poseMessage is not null)
+            {
+                <span class="error">@poseMessage</span>
+            }
+            @foreach (var name in savedPoses)
+            {
+                <span class="chip">
+                    <button class="ghost" @onclick="() => LoadPoseAsync(name)">@name</button>
+                    <button class="ghost" title="Sil" @onclick="() => DeletePoseAsync(name)">×</button>
+                </span>
+            }
+        </div>
+    </section>
+}
+
+<div class="viewer-groups">
+    @foreach (var group in groups)
+    {
+        <label class="chip">
+            <input type="checkbox" checked="@(!hidden.Contains(group.Id))" @onchange="e => ToggleGroup(group.Id, e)" />
+            <span class="dot" style="background:@group.Color"></span>@group.Label
+        </label>
+    }
+</div>
+
+<div class="viewer-controls">
+    <strong>Dışa aktar:</strong>
+    <button class="ghost" @onclick="ExportAllAsync">Tüm model (STL)</button>
+    <button class="ghost" @onclick="ExportBomAsync">Malzeme listesi (CSV)</button>
+    <button class="ghost" @onclick="ExportSceneAsync">Sahne verisi (JSON)</button>
+</div>
+
+@if (Scene.TryGetProperty("fit", out var fit))
+{
+    <section class="card">
+        <h3>Parça uyumu</h3>
+        @if (fit.GetProperty("ok").GetBoolean())
+        {
+            <p><span class="state ok">Uyumlu</span> @fit.GetProperty("checked").GetInt32() parça kontrol edildi: iç içe giren ya da gövdenin dışına taşan parça yok.</p>
+        }
+        else
+        {
+            <p><span class="state warn">@fit.GetProperty("issues").GetArrayLength() uyumsuzluk</span> Aşağıdakilere tıklayınca parça seçilir; konumunu düzenleyebilirsin.</p>
+            <ul>
+                @foreach (var issue in fit.GetProperty("issues").EnumerateArray())
+                {
+                    var first = issue.GetProperty("parts")[0].GetString()!;
+                    <li><a href="javascript:void(0)" @onclick="() => PickAsync(first)">@issue.GetProperty("text").GetString()</a></li>
+                }
+            </ul>
+        }
+        <p class="muted">Denetim kutu ölçüleriyle yapılır (iç içe girme payı 1 mm); basılı parçalar şablon ölçülerinden, kartlar ve servolar gerçek boyutlarından gelir.</p>
+    </section>
+}
+
+@if (picked is not null)
+{
+    <section class="card">
+        <h3>@picked.Label</h3>
+        <p class="muted">@GroupLabel(picked.Group)@(picked.Proxy ? " · yaklaşık ölçülü gösterim (üretim CAD'i değil)" : " · gerçek CAD (FreeCAD)")</p>
+        @if (picked.Size.Length == 3)
+        {
+            <p>Boyut (x · y · z): <strong>@picked.Size[0] × @picked.Size[1] × @picked.Size[2] mm</strong></p>
+        }
+        <ul>
+            @foreach (var line in picked.Info)
+            {
+                <li><strong>@line.Key:</strong> @line.Value</li>
+            }
+        </ul>
+        <h4>Bu parçayı düzenle</h4>
+        <form @onsubmit="SavePartAsync" @onsubmit:preventDefault>
+            <div class="viewer-controls">
+                <strong>Konum (mm):</strong>
+                @for (var i = 0; i < 3; i++)
+                {
+                    var k = i;
+                    <label>@("xyz"[k])
+                        <input type="number" step="any" style="width:6rem" value="@editPos[k].ToString(CultureInfo.InvariantCulture)" @onchange="e => editPos[k] = Num(e, editPos[k])" />
+                    </label>
+                }
+            </div>
+            @if (picked.Proxy)
+            {
+                <div class="viewer-controls">
+                    <strong>Kutu boyutu (mm):</strong>
+                    @for (var i = 0; i < 3; i++)
+                    {
+                        var k = i;
+                        <label>@("xyz"[k])
+                            <input type="number" step="any" min="1" style="width:6rem" value="@editSize[k].ToString(CultureInfo.InvariantCulture)" @onchange="e => editSize[k] = Num(e, editSize[k])" />
+                        </label>
+                    }
+                </div>
+            }
+            <button class="primary" type="submit" disabled="@saving">@(saving ? "Hazırlanıyor…" : "Değişikliği taslak olarak hazırla")</button>
+            @if (partMessage is not null)
+            {
+                <p>@partMessage</p>
+            }
+        </form>
+        <div class="viewer-controls">
+            <button class="ghost" @onclick="IsolateAsync">Sadece bunu göster</button>
+            <button class="ghost" @onclick="ShowAllAsync">Hepsini göster</button>
+            @if (picked.Stl is { Length: > 0 })
+            {
+                <a class="primary" href="@Link(picked.Stl)" download="@($"{picked.Id}.stl")">STL indir</a>
+            }
+            @if (picked.Step is { Length: > 0 })
+            {
+                <a class="primary" href="@Link(picked.Step)" download="@($"{picked.Id}.step")">STEP indir</a>
+            }
+            @if (picked.Drawing is { Length: > 0 })
+            {
+                <a class="primary" href="@Link(picked.Drawing)" target="_blank" rel="noopener">İmalat resmi (SVG)</a>
+            }
+            @if (picked.Dxf is { Length: > 0 })
+            {
+                <a class="primary" href="@Link(picked.Dxf)" download="@($"{picked.Id}.dxf")">DXF indir</a>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <p class="muted">Bir parçaya tıkla: adı, boyutu, modeli ve özellikleri burada görünür; tek başına inceleyebilir, basılı parçaları STL/STEP olarak indirebilirsin. Fareyle döndür, tekerlekle yakınlaştır, sağ tuşla kaydır.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public JsonElement Scene { get; set; }
+    [Parameter] public string GenomeId { get; set; } = "";
+    [Parameter] public EventCallback<string> OnDraft { get; set; }
+
+    private sealed record Group(string Id, string Label, string Color);
+    private sealed record Prm(string Name, double Value, double? Min, double? Max);
+    private sealed record Picked(string Id, string Label, string Group, bool Proxy, Dictionary<string, string> Info, double[] Size, string? Stl, string? Step, double[] Pos, double[] BoxSize, Prm[] Params, string? Drawing = null, string? Dxf = null);
+
+    private sealed record Joint(string Name, string Type, double Lower, double Upper);
+
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    private List<Joint> joints = [];
+    private Dictionary<string, double> poseValues = [];
+    private List<string> savedPoses = [];
+    private string poseName = "";
+    private string? poseMessage;
+    private Dictionary<string, Dictionary<string, double>> savedPoseMap = [];
+    private int loadedParts, totalParts;
+    private JsonElement analysis;
+
+    private static double Dbl(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+    private bool autoCheck, showCom = true;
+
+    [JSInvokable]
+    public void OnLoadProgress(int loaded, int total)
+    {
+        loadedParts = loaded;
+        totalParts = total;
+        StateHasChanged();
+    }
+
+    private async Task AnalyzeAsync()
+    {
+        if (module is null) { return; }
+        analysis = await module!.InvokeAsync<JsonElement>("analyze", showCom);
+        _ = ReportAsync();
+    }
+
+    private readonly HashSet<string> reported = [];
+
+    /// <summary>What the check found goes to the lab's learning (once per finding and page).</summary>
+    private async Task ReportAsync()
+    {
+        var found = new List<string>();
+        if (analysis.ValueKind == JsonValueKind.Object)
+        {
+            if (analysis.TryGetProperty("collisions", out var hits) && hits.ValueKind == JsonValueKind.Array)
+            {
+                found.AddRange(hits.EnumerateArray().Take(3).Select(h => $"{h[0].GetString()} ile {h[1].GetString()} iç içe giriyor ({Name})"));
+            }
+
+            if (analysis.TryGetProperty("stable", out var stable) && stable.ValueKind == JsonValueKind.False)
+            {
+                found.Add($"{Name} bu pozda devrilir: ağırlık merkezi destek çokgeninin dışında");
+            }
+        }
+
+        foreach (var text in found.Where(reported.Add))
+        {
+            try { await Api.LearnOpAsync(new { op = "note", domain = "assembly", kind = "analysis", text }); }
+            catch (HttpRequestException) { /* learning is best effort */ }
+        }
+    }
+
+    private async Task DropAsync()
+    {
+        if (module is null) { return; }
+        analysis = await module!.InvokeAsync<JsonElement>("dropToGround");
+    }
+
+    private async Task ClearAnalysisAsync()
+    {
+        if (module is null) { return; }
+        analysis = default;
+        await module!.InvokeVoidAsync("clearAnalysis");
+    }
+
+    private static double Ui(Joint j, double value) => j.Type == "prismatic" ? value * 1000.0 : value * 180.0 / Math.PI;
+
+    private static double FromUi(Joint j, double value) => j.Type == "prismatic" ? value / 1000.0 : value * Math.PI / 180.0;
+
+    private static string Unit(Joint j) => j.Type == "prismatic" ? "mm" : "derece";
+
+    protected override void OnInitialized()
+    {
+        if (Scene.TryGetProperty("rig", out var rig) && rig.ValueKind == JsonValueKind.Object)
+        {
+            joints = [.. rig.GetProperty("joints").EnumerateArray()
+                .Where(j => (!j.TryGetProperty("mimic", out var m) || m.ValueKind == JsonValueKind.Null)
+                            && j.GetProperty("type").GetString() is "revolute" or "continuous" or "prismatic")
+                .Select(j => new Joint(j.GetProperty("name").GetString()!, j.GetProperty("type").GetString()!,
+                    j.GetProperty("lower").GetDouble(), j.GetProperty("upper").GetDouble()))];
+        }
+    }
+
+    private async Task RefreshPoseAsync()
+    {
+        if (module is null || disposed) { return; }
+        poseValues = await module.InvokeAsync<Dictionary<string, double>>("getPose");
+    }
+
+    private string ModelKey => Scene.GetProperty("genome").GetString()!.Split('@')[0];
+
+    /// <summary>One pose operation on the lab (poses are kept there, shared by every browser).</summary>
+    private async Task PoseOpAsync(string op, string? name = null, Dictionary<string, double>? values = null)
+    {
+        try
+        {
+            var accepted = await Api.PoseOpAsync(ModelKey, op, name, values);
+            for (var i = 0; i < 60; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("poses", out var poses))
+                {
+                    savedPoseMap = poses.EnumerateObject().ToDictionary(
+                        p => p.Name, p => p.Value.EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetDouble()));
+                    savedPoses = [.. savedPoseMap.Keys.OrderBy(k => k)];
+                }
+                else if (status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err))
+                {
+                    poseMessage = err.GetString();
+                }
+
+                return;
+            }
+
+            poseMessage = "Lab cevap vermedi.";
+        }
+        catch (HttpRequestException)
+        {
+            poseMessage = "Poz isteği gönderilemedi.";
+        }
+    }
+
+    private async Task OnJointAsync(Joint j, ChangeEventArgs e)
+    {
+        if (module is null) { return; }
+        var ui = double.TryParse(e.Value?.ToString(), NumberStyles.Float, Inv, out var v) ? v : 0;
+        poseValues[j.Name] = FromUi(j, ui);
+        await module!.InvokeVoidAsync("setJoint", j.Name, poseValues[j.Name]);
+        if (autoCheck) { await AnalyzeAsync(); }
+    }
+
+    private async Task ResetPoseAsync()
+    {
+        if (module is null) { return; }
+        await module!.InvokeVoidAsync("play", (string?)null);
+        await module!.InvokeVoidAsync("resetPose");
+        await RefreshPoseAsync();
+    }
+
+    private async Task RandomPoseAsync()
+    {
+        if (module is null) { return; }
+        await module!.InvokeVoidAsync("play", (string?)null);
+        await module!.InvokeVoidAsync("randomPose");
+        await RefreshPoseAsync();
+    }
+
+    private async Task SavePoseAsync()
+    {
+        if (module is null) { return; }
+        await RefreshPoseAsync();
+        poseMessage = null;
+        await PoseOpAsync("save", poseName.Trim(), new Dictionary<string, double>(poseValues));
+        poseName = "";
+        StateHasChanged();
+    }
+
+    private async Task LoadPoseAsync(string name)
+    {
+        if (module is null) { return; }
+        if (!savedPoseMap.TryGetValue(name, out var values)) { return; }
+        await module!.InvokeVoidAsync("play", (string?)null);
+        await module!.InvokeVoidAsync("setPose", values);
+        await RefreshPoseAsync();
+    }
+
+    private async Task DeletePoseAsync(string name)
+    {
+        if (module is null) { return; }
+        poseMessage = null;
+        await PoseOpAsync("delete", name);
+        StateHasChanged();
+    }
+
+    private async Task ExportPoseAsync()
+    {
+        if (module is null) { return; }
+        await RefreshPoseAsync();
+        var json = JsonSerializer.Serialize(new { birim = "radyan (prismatic: metre)", eklemler = poseValues }, new JsonSerializerOptions { WriteIndented = true });
+        await module!.InvokeVoidAsync("downloadText", $"{Name}-poz.json", json, "application/json");
+    }
+
+    private double[] editPos = new double[3];
+    private double[] editSize = new double[3];
+    private readonly Dictionary<string, double> editParams = [];
+    private bool saving;
+    private string? partMessage;
+
+    private ElementReference host;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<ModelViewer>? self;
+    private Group[] groups = [];
+    private readonly HashSet<string> hidden = [];
+    private Picked? picked;
+    private string? error;
+    private bool loading = true;
+    private int explode, shell = 18;
+    private bool disposed;
+    private JsonElement[]? fasteners;
+    private int? fastenerStep;
+    private int wireIndex = -2;
+
+    private JsonElement[] wiring => Scene.TryGetProperty("wiring", out var w) && w.ValueKind == JsonValueKind.Array ? [.. w.EnumerateArray()] : [];
+
+    private string Label(string id) =>
+        Scene.GetProperty("parts").EnumerateArray().FirstOrDefault(p => p.GetProperty("id").GetString() == id) is { ValueKind: JsonValueKind.Object } part
+            ? part.GetProperty("label").GetString()! : id;
+
+    private async Task ShowWiresAsync(int index)
+    {
+        if (module is null) { return; }
+        wireIndex = index;
+        var rows = index == -1 ? wiring : index >= 0 ? [wiring[index]] : [];
+        await module.InvokeVoidAsync("showWires", rows);
+    }
+    private const string StepKey = "step";
+
+    private string RowStyle(JsonElement f) =>
+        fastenerStep == f.GetProperty(StepKey).GetInt32() ? "cursor:pointer;background:rgba(255,149,0,.18)" : "cursor:pointer";
+
+    private async Task ToggleFastenersAsync()
+    {
+        if (module is null) { return; }
+        if (fasteners is not null)
+        {
+            fasteners = null;
+            fastenerStep = null;
+            await module!.InvokeVoidAsync("showFastener", (int?)null);
+            return;
+        }
+
+        fasteners = await module!.InvokeAsync<JsonElement[]>("fasteners");
+    }
+
+    private async Task ShowFastenerAsync(int step)
+    {
+        if (module is null) { return; }
+        fastenerStep = step;
+        await module!.InvokeVoidAsync("showFastener", step);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            groups = [.. Scene.GetProperty("groups").EnumerateArray().Select(g =>
+                new Group(g.GetProperty("id").GetString()!, g.GetProperty("label").GetString()!, g.GetProperty("color").GetString()!))];
+            self = DotNetObjectReference.Create(this);
+            module = await Js.InvokeAsync<IJSObjectReference>("import", "./js/viewer.js");
+            if (disposed)
+            {
+                return; // the tab was switched away before the viewer finished loading
+            }
+
+            await module.InvokeAsync<int>("mount", host, Scene, Tokens.Access ?? "", self);
+            await RefreshPoseAsync();
+            if (joints.Count > 0) { _ = PoseOpAsync("list").ContinueWith(_ => InvokeAsync(StateHasChanged)); }
+            if (disposed)
+            {
+                await module.InvokeVoidAsync("dispose");
+            }
+        }
+        catch (Exception ex) when (disposed || ex is ObjectDisposedException or JSDisconnectedException or TaskCanceledException)
+        {
+            // the page moved on while the viewer was starting: nothing to show
+        }
+        catch (JSException ex)
+        {
+            error = "3B görüntü açılamadı (tarayıcın WebGL'i desteklemiyor olabilir): " + ex.Message;
+        }
+        finally
+        {
+            loading = false;
+            if (!disposed)
+            {
+                StateHasChanged();
+            }
+        }
+    }
+
+    private string GroupLabel(string id) => groups.FirstOrDefault(g => g.Id == id)?.Label ?? id;
+
+    private string Link(string url) => $"{url.TrimStart('/')}?access_token={Tokens.Access}";
+
+    private async Task OnExplode(ChangeEventArgs e)
+    {
+        explode = int.Parse(e.Value?.ToString() ?? "0");
+        await module!.InvokeVoidAsync("setExplode", explode / 100.0);
+    }
+
+    private async Task OnShell(ChangeEventArgs e)
+    {
+        shell = int.Parse(e.Value?.ToString() ?? "0");
+        await module!.InvokeVoidAsync("setShell", shell / 100.0);
+    }
+
+    private Task OnWireframe(ChangeEventArgs e) => module!.InvokeVoidAsync("setWireframe", e.Value is true).AsTask();
+
+    private async Task PlayAsync(string? kind)
+    {
+        explode = 0;
+        await module!.InvokeVoidAsync("play", kind);
+    }
+
+    private async Task ToggleGroup(string id, ChangeEventArgs e)
+    {
+        var on = e.Value is true;
+        if (on) { hidden.Remove(id); } else { hidden.Add(id); }
+        await module!.InvokeVoidAsync("setGroupVisible", id, on);
+    }
+
+    private Task IsolateAsync() => picked is null ? Task.CompletedTask : module!.InvokeVoidAsync("isolate", picked.Id).AsTask();
+
+    private Task ShowAllAsync() => module!.InvokeVoidAsync("showAll").AsTask();
+
+    private static double Num(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : fallback;
+
+    private async Task PickAsync(string id)
+    {
+        await module!.InvokeVoidAsync("highlight", id);
+        OnPartPicked(id, []);
+    }
+
+    private async Task SavePartAsync()
+    {
+        saving = true;
+        partMessage = null;
+        try
+        {
+            var changed = picked!.Params.Where(q => Math.Abs(editParams[q.Name] - q.Value) > 1e-9).ToDictionary(q => q.Name, q => editParams[q.Name]);
+            var accepted = await Api.PartModelAsync(GenomeId, picked.Id,
+                editPos.SequenceEqual(picked.Pos) ? null : editPos,
+                picked.Proxy && !editSize.SequenceEqual(picked.BoxSize) ? editSize : null,
+                changed.Count > 0 ? changed : null);
+            for (var i = 0; i < 120; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                var result = status.Result;
+                partMessage = status.State == "applied" && result is { ValueKind: JsonValueKind.Object } r && r.TryGetProperty("reply", out var reply)
+                    ? reply.GetString()
+                    : "Yapamadım: " + (status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() : status.State);
+                if (result is { ValueKind: JsonValueKind.Object } d && d.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.Object)
+                {
+                    await OnDraft.InvokeAsync(draft.GetProperty("id").GetString());
+                }
+
+                return;
+            }
+
+            partMessage = "Cevap gelmedi; lab meşgul olabilir.";
+        }
+        catch (HttpRequestException)
+        {
+            partMessage = "İstek gönderilemedi.";
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private string Name => Scene.GetProperty("genome").GetString()!.Replace('@', '_');
+
+    private Task ExportAllAsync() => module!.InvokeVoidAsync("exportStl", $"{Name}.stl").AsTask();
+
+    private Task ExportSceneAsync() => module!.InvokeVoidAsync("downloadText", $"{Name}.json", Scene.GetRawText(), "application/json").AsTask();
+
+    private Task ExportBomAsync()
+    {
+        var csv = new StringBuilder("﻿Grup;Parça;Adet;Özellik;Teknik özellikler;Bağlantılar;Tahmini\n");
+        foreach (var row in Scene.GetProperty("bom").EnumerateArray())
+        {
+            string F(string text) => "\"" + text.Replace("\"", "\"\"") + "\"";
+            var specs = string.Join(" | ", row.GetProperty("specs").EnumerateArray().Select(x => x.GetString()));
+            var links = string.Join(" | ", row.GetProperty("links").EnumerateArray().Select(x => x.GetProperty("url").GetString()));
+            csv.Append($"{F(row.GetProperty("group").GetString()!)};{F(row.GetProperty("part").GetString()!)};{row.GetProperty("qty").GetInt32()};{F(row.GetProperty("spec").GetString()!)};{F(specs)};{F(links)};{(row.GetProperty("estimated").GetBoolean() ? "evet" : "hayır")}\n");
+        }
+
+        return module!.InvokeVoidAsync("downloadText", $"{Name}-malzeme.csv", csv.ToString(), "text/csv").AsTask();
+    }
+
+    [JSInvokable]
+    public void OnPartPicked(string? id, double[] size)
+    {
+        picked = null;
+        if (id is not null)
+        {
+            foreach (var part in Scene.GetProperty("parts").EnumerateArray())
+            {
+                if (part.GetProperty("id").GetString() != id)
+                {
+                    continue;
+                }
+
+                var info = part.GetProperty("info");
+                string? stl = null, step = null, drawing = null, dxf = null;
+                if (part.TryGetProperty("files", out var files))
+                {
+                    drawing = files.TryGetProperty("drawing", out var d1) ? d1.GetString() : null;
+                    dxf = files.TryGetProperty("dxf", out var d2) ? d2.GetString() : null;
+                    stl = files.TryGetProperty("stl", out var a) ? a.GetString() : null;
+                    step = files.TryGetProperty("step", out var b) ? b.GetString() : null;
+                }
+
+                var pos = part.GetProperty("pos").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+                var box = part.GetProperty("geom").GetProperty("size").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+                var prms = part.TryGetProperty("params", out var plist)
+                    ? plist.EnumerateArray().Select(q => new Prm(q.GetProperty("name").GetString()!, q.GetProperty("value").GetDouble(),
+                        q.GetProperty("min").ValueKind == JsonValueKind.Number ? q.GetProperty("min").GetDouble() : null,
+                        q.GetProperty("max").ValueKind == JsonValueKind.Number ? q.GetProperty("max").GetDouble() : null)).ToArray()
+                    : [];
+                picked = new Picked(id, part.GetProperty("label").GetString()!, part.GetProperty("group").GetString()!,
+                    info.TryGetProperty("proxy", out var proxy) && proxy.ValueKind == JsonValueKind.True,
+                    info.EnumerateObject().Where(p => p.Name != "proxy").ToDictionary(p => p.Name, p => p.Value.ToString()),
+                    size, stl, step, pos, box, prms, drawing, dxf);
+                editPos = [.. pos];
+                editSize = [.. box];
+                editParams.Clear();
+                foreach (var q in prms) { editParams[q.Name] = q.Value; }
+                partMessage = null;
+                break;
+            }
+        }
+
+        Assistant.PickedPart = picked is null ? null : $"{picked.Label} ({picked.Id})";
+        Assistant.Notify();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (module is not null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("dispose");
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        self?.Dispose();
+    }
+}

@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-health-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: health
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      command:
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://{{ .Release.Name }}-brain:{{ .Values.service.port }}/health', timeout=10)"
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests: {cpu: 25m, memory: 64Mi}
+        limits: {cpu: 100m, memory: 128Mi}

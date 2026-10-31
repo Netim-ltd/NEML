@@ -1,0 +1,18 @@
+<!--
+  Copyright (c) 2026 Mustafa Gulsoy.
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Neml.Domain\Neml.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    <!-- Design time only: needed by "dotnet ef migrations add", never shipped. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

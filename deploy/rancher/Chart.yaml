@@ -1,0 +1,8 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+apiVersion: v2
+name: neml-brain
+description: NEML lab brain for a Rancher-managed Kubernetes cluster
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

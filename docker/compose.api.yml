@@ -1,0 +1,52 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: neml-api
+
+x-api: &api
+  image: docker.io/${NEML_DOCKERHUB_NAMESPACE:?set namespace}/neml-api:${NEML_IMAGE_TAG:?set image tag}
+  env_file:
+    - path: ${NEML_API_ENV_FILE:?set protected API environment file}
+      required: true
+  environment:
+    Bridge__AllowedIps__0: ${NEML_NGINX_PROXY_IP:?set nginx proxy address}
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  networks:
+    proxy:
+      aliases: [neml-api]
+
+services:
+  migrate:
+    <<: *api
+    command: [--migrate]
+    restart: "no"
+    cpus: 0.5
+    mem_limit: 512m
+
+  provision-owner:
+    <<: *api
+    command: [--provision-owner]
+    restart: "no"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    cpus: 0.5
+    mem_limit: 512m
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    depends_on:
+      provision-owner: {condition: service_completed_successfully}
+    cpus: 0.75
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD, curl, -fsS, "http://127.0.0.1:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 45s
+
+networks:
+  proxy:
+    external: true
+    name: nginx-proxy-network

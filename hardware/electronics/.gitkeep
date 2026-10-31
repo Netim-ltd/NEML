@@ -1,0 +1,13 @@
+# Copyright (c) 2026 Mustafa Gulsoy.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPEC 15: KiCad projects land here. Outputs are git-lfs tracked.
+#
+# EMPTY ON PURPOSE, AND THIS IS THE DECLARATION (SPEC 0.2).
+# brain/neml_brain/generators/elec.py resolves hand written templates from
+#   hardware/electronics/templates/<template_id>.kicad_sch
+#   hardware/electronics/templates/<template_id>.kicad_pcb
+# Those files are hardware artefacts drawn by a human in KiCad, not generated,
+# and SPEC 16 schedules them with T-093 (Faz 6, "KiCad sablon motoru +
+# dogrulama zinciri"). Until T-093 lands, every elec.py chain call raises
+# ChainError naming the missing path - it fails loudly, it never pretends.
+# See CHANGELOG.md -> "Bilinen bosluklar".
