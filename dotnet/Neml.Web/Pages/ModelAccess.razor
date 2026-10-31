@@ -2,6 +2,7 @@
 @* SPDX-License-Identifier: AGPL-3.0-or-later *@
 @page "/model-erisimi"
 @inject ApiClient Api
+@inject NavigationManager Nav
 @using System.Text.Json
 
 <PageTitle>Model erişimi — NEML</PageTitle>
@@ -114,10 +115,10 @@ else
     <section class="card" aria-labelledby="conn-title">
         <h2 id="conn-title">Bağlantı bilgisi</h2>
         <dl>
-            <dt>Temel adres</dt><dd><code>https://api.neml.easyway-sharing.com/v1</code></dd>
+            <dt>Temel adres</dt><dd><code>@(Nav.BaseUri.TrimEnd('/'))/v1</code></dd>
             <dt>Başlık</dt><dd><code>Authorization: Bearer &lt;istemci anahtarı&gt;</code></dd>
             <dt>Uçlar</dt><dd><code>/models</code>, <code>/chat/completions</code>, <code>/embeddings</code>, <code>/usage</code> (istemci kendi limitini ve kullanımını görür)</dd>
-            <dt>Belge</dt><dd><a href="https://api.neml.easyway-sharing.com/swagger" target="_blank" rel="noopener">Swagger</a> · OpenClaw ve RAG kurulumu: <code>docs/OPENCLAW.md</code></dd>
+            <dt>Belge</dt><dd><a href="@(Nav.BaseUri.TrimEnd('/'))/swagger" target="_blank" rel="noopener">Swagger</a> · OpenClaw ve RAG kurulumu: <code>docs/OPENCLAW.md</code></dd>
         </dl>
     </section>
 }

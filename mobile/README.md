@@ -38,7 +38,7 @@ Web önbelleği için `web/sqlite3.wasm` ile `web/drift_worker.js`, kilitli Drif
 ## Sunucu adresi
 
 Varsayılan adres `lib/core/config.dart` içindeki `kDefaultServerUrl`
-(`https://api.neml.example.com`, §17.3'teki `NEML_CLOUD_WS` ile aynı sunucu).
+(örnek adres; kendi sunucunuz için derlerken `--dart-define=NEML_SERVER_URL=https://api.<alan-adınız>`, CI'da `NEML_SERVER_URL` deposu değişkeni).
 Operatör bunu **Giriş** ekranından veya **Ayarlar** ekranından değiştirir
 (§10.2, ekran 1 ve 13); seçim güvenli depoda (`neml.settings`) saklanır ve
 uygulama ilk karede doğru sunucuyla açılır. Derleme zamanı bayrağı yoktur —

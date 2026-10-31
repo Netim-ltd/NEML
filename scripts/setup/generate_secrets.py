@@ -64,7 +64,7 @@ def brain_env(a: argparse.Namespace, bridge_key: str) -> str:
         f"NEML_VLLM_URL={a.llm_url or f'https://{MARK}/v1'}",
         f"NEML_EMBED_URL={a.embed_url or f'https://{MARK}'}",
         "NEML_MODEL=Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ",
-        "NEML_CLOUD_WS=wss://api.neml.easyway-sharing.com/bridge/ws",
+        f"NEML_CLOUD_WS=wss://api.{a.domain or MARK}/bridge/ws",
         f"NEML_NODE_ID={a.node_id}",
         f"NEML_API_KEY={bridge_key}",
         f"NEML_OWNERS={a.owner_email or ''}",  # decided_by is the owner's login e-mail
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, required=True)
     for flag in (
         "owner-email owner-password namespace tenant db-host api-db-password "
-        "brain-db-password llm-url embed-url mcp-base"
+        "brain-db-password llm-url embed-url mcp-base domain"
     ).split():
         p.add_argument(f"--{flag}")
     p.add_argument("--node-id", default="neml-control-01")

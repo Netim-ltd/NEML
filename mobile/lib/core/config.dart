@@ -13,7 +13,7 @@ import 'auth/token_store.dart';
 /// settings screen (section 10.2 screens 1 and 13).
 // A release build can bake in its own server: --dart-define=NEML_SERVER_URL=https://host
 const kDefaultServerUrl =
-    String.fromEnvironment('NEML_SERVER_URL', defaultValue: 'https://api.neml.easyway-sharing.com');
+    String.fromEnvironment('NEML_SERVER_URL', defaultValue: 'https://api.neml.example.com');
 
 /// Push triggers of section 10.4, in the spec's own order.
 const kPushTriggers = <String>[

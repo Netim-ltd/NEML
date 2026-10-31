@@ -53,7 +53,7 @@ jobs:
       - name: Build the operator apk (SPEC 17.4 step 8)
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release --dart-define=NEML_SERVER_URL=${{ vars.NEML_SERVER_URL || 'https://api.neml.example.com' }}
         working-directory: mobile
       - run: |
           mkdir -p dist

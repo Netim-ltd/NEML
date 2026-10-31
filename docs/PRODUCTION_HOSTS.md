@@ -2,6 +2,21 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # NEML public hosts
 
+## Where the host name lives
+
+No host name or address is in the code. Everything hangs off one base domain, `NEML_DOMAIN`
+(below the examples use `neml.example.com`):
+
+| Part | How it gets the domain |
+| --- | --- |
+| nginx (`deploy/nginx/*.conf`) | `envsubst '${NEML_DOMAIN}'` at deploy time (`deploy_release.sh`) |
+| Deploy scripts (`scripts/setup/deploy_release.sh`, `deploy_panel.sh`) | `NEML_DOMAIN` from the environment, else `/srv/neml/deploy.env` on the host |
+| GitHub workflow (`deploy-control.yml`) | repository variable `NEML_DOMAIN`, passed to the scripts |
+| Brain settings | `scripts/setup/generate_secrets.py --domain <NEML_DOMAIN>` writes `NEML_CLOUD_WS` |
+| .NET API CORS | `NEML_PUBLIC_URL`, `NEML_PANEL_URL` in `deploy/vps/.env` |
+| Web screens (Blazor) | the address the page was opened from |
+| Android build (`release.yml`) | repository variable `NEML_SERVER_URL` (`--dart-define`); the app also lets the operator change it |
+
 The production namespace is `neml.example.com`. DNS currently maps the
 following A records to `<SERVER_IP>` (your server's public address):
 

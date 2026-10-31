@@ -2,6 +2,9 @@
 # Copyright (c) 2026 Mustafa Gulsoy.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
+# The host name is not in the repository: the workflow passes the repository variable NEML_DOMAIN (or /srv/neml/deploy.env holds it); panel., api. and lab. hang off it.
+[[ -n "${NEML_DOMAIN:-}" || ! -f /srv/neml/deploy.env ]] || . /srv/neml/deploy.env
+: "${NEML_DOMAIN:?set NEML_DOMAIN in /srv/neml/deploy.env}"
 previous_release="$(readlink -f /srv/neml/current 2>/dev/null || true)"
 proxy_backed_up=0
 rollback() {
@@ -56,7 +59,7 @@ bash scripts/setup/deploy_api.sh
 proxy_config=/opt/docker/nginx-proxy/conf.d/neml.conf
 cp "$proxy_config" "$proxy_config.prev"
 proxy_backed_up=1
-cp "$release/deploy/nginx/neml-proxy-live.conf" "$proxy_config"
+envsubst '${NEML_DOMAIN}' < "$release/deploy/nginx/neml-proxy-live.conf" > "$proxy_config"
 if ! docker exec nginx-proxy nginx -t; then
   cp "$proxy_config.prev" "$proxy_config"
   docker exec nginx-proxy nginx -t
@@ -64,11 +67,11 @@ if ! docker exec nginx-proxy nginx -t; then
   exit 1
 fi
 docker exec nginx-proxy nginx -s reload
-curl --fail --silent --show-error --max-time 15 https://api.neml.easyway-sharing.com/health >/dev/null
+curl --fail --silent --show-error --max-time 15 https://api.${NEML_DOMAIN}/health >/dev/null
 bash scripts/setup/deploy_control.sh --check
 bash scripts/setup/deploy_control.sh --deploy
 docker exec neml-control-brain-1 python -c 'import json,urllib.request; h=json.load(urllib.request.urlopen("http://127.0.0.1:8080/health",timeout=10)); assert h["status"]=="ok",h.get("degraded")'
-[[ "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://lab.neml.easyway-sharing.com/)" == 404 ]]
+[[ "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 https://lab.${NEML_DOMAIN}/)" == 404 ]]
 mkdir -p /srv/neml
 ln -sfn "$release" /srv/neml/current.next
 mv -Tf /srv/neml/current.next /srv/neml/current

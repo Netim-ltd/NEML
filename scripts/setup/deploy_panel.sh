@@ -2,6 +2,9 @@
 # Copyright (c) 2026 Mustafa Gulsoy.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 set -euo pipefail
+# The host name is not in the repository: the workflow passes the repository variable NEML_DOMAIN (or /srv/neml/deploy.env holds it); panel., api. and lab. hang off it.
+[[ -n "${NEML_DOMAIN:-}" || ! -f /srv/neml/deploy.env ]] || . /srv/neml/deploy.env
+: "${NEML_DOMAIN:?set NEML_DOMAIN in /srv/neml/deploy.env}"
 sha="${1:?release SHA required}"
 [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo "invalid release SHA" >&2; exit 2; }
 release="/srv/neml/releases/$sha"
@@ -27,7 +30,7 @@ if ! docker compose -f "$compose" up -d --force-recreate --wait panel; then
   fi
   exit 1
 fi
-if ! curl --fail --silent --show-error --max-time 15 https://panel.neml.easyway-sharing.com/ >/dev/null; then
+if ! curl --fail --silent --show-error --max-time 15 https://panel.${NEML_DOMAIN}/ >/dev/null; then
   if [[ -n "$previous" && -s "$previous/index.html" ]]; then
     ln -sfn "$previous" /srv/neml/web/current.next
     mv -Tf /srv/neml/web/current.next /srv/neml/web/current

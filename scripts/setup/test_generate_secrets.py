@@ -12,7 +12,7 @@ def test_full_flags_pass_both_env_checks(tmp_path: Path) -> None:
             "--out", str(tmp_path), "--owner-email", "me@firm.com", "--namespace", "firm",
             "--tenant", "firm", "--db-host", "db.firm.com", "--api-db-password", "a" * 20,
             "--brain-db-password", "b" * 20, "--llm-url", "https://gpu.firm.com/v1",
-            "--embed-url", "https://emb.firm.com", "--mcp-base", "https://lab.firm.com",
+            "--embed-url", "https://emb.firm.com", "--mcp-base", "https://lab.firm.com", "--domain", "neml.firm.com",
         ]
     )
     brain = check_control_env.read_env(tmp_path / "NEML_BRAIN_ENV.txt")
