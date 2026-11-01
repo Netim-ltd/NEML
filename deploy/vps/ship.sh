@@ -6,6 +6,6 @@ set -eu
 [ -f ship.sh ] || { echo "run from deploy/vps: cd deploy/vps && ./ship.sh <service>" >&2; exit 1; }
 host="${NEML_HOST:-neml}"
 what="${*:-brain}"
-tar -C ../.. -cf - brain/neml_brain mcp_servers docker hardware config deploy/vps/compose.yml | ssh "$host" 'tar -C ~/neml -xf -'
+tar -C ../.. -cf - brain/neml_brain mcp_servers docker hardware config deploy/vps/compose.yml deploy/vps/neml-watchdog.sh | ssh "$host" 'tar -C ~/neml -xf -'
 case " $what " in *" api "*) ./publish-api.sh "$host" ;; esac
 ssh "$host" "cd ~/neml/deploy/vps && sudo docker compose build $what && sudo docker compose up -d --no-build $what"
