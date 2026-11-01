@@ -137,6 +137,7 @@ CASES: list[dict[str, Any]] = [
     },
 ]
 PARALLEL = 2
+CASE_TIMEOUT_S = 1200  # one part on the CPU model takes minutes; a case that takes 20 is hung, and must not wedge the whole run
 VOLUME_TOL = 0.06
 BOX_TOL = 0.06
 
@@ -193,13 +194,16 @@ class CadBench:
                 started = time.time()
                 lk = {"name": case["id"], "role": case["prompt"], "dims_mm": case["dims"], "material": "PETG", "case": case["id"]}
                 try:
-                    built = await self._gen._part(lk, out, lambda _t: None, rules)  # noqa: SLF001 - the same path a design takes
+                    built = await asyncio.wait_for(
+                        self._gen._part(lk, out, lambda _t: None, rules),  # noqa: SLF001 - the same path a design takes
+                        CASE_TIMEOUT_S,
+                    )
                     row = {"id": case["id"], **score(case, built)}
                     skills = getattr(self._gen, "skills", None)
                     if row["passed"] and skills is not None and keep:  # a checked recipe is worth showing for similar parts
                         skills.add(case["id"], case["prompt"], built["recipe"], "bench")
                 except Exception as exc:  # noqa: BLE001 - a case the model cannot do is a result, not a crash
-                    row = {"id": case["id"], "passed": False, "error": str(exc)[:160]}
+                    row = {"id": case["id"], "passed": False, "error": (str(exc) or type(exc).__name__)[:160]}
                 row["seconds"] = round(time.time() - started)
                 run["cases"] = [*run["cases"], row]
                 self._write(run, keep)
