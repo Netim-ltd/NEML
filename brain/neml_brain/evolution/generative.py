@@ -700,6 +700,10 @@ class Generator:
             ckpt.update(plan=await self._race(brief, progress), out=uuid.uuid4().hex[:8], built={})
             save()
         plan = ckpt["plan"]
+        early = robot_issues(plan)  # the numbers already say no (too many joints, weak actuator, tips over): do not spend minutes of CPU building its parts
+        if early and not ckpt["built"]:
+            self._learn.note("structure", "plan_rejected", f"{plan['name']}: " + "; ".join(early[:3]), once=True)
+            raise RuntimeError("plan reddedildi, parçalar üretilmedi: " + "; ".join(early[:4]))
         name = model_name(str(plan["name"]))[:20]
         out = self._work / ckpt["out"]
         out.mkdir(parents=True, exist_ok=True)

@@ -16,22 +16,38 @@ from typing import Any
 from neml_brain.evolution.knowledge import words
 
 MAX_SKILLS = 120
-SHOWN_CHARS = 700  # a recipe longer than this is not shown (it would crowd the prompt)
+SHOWN_CHARS = 1100  # a recipe longer than this is not shown (it would crowd the prompt)
+
+
+def _seeds() -> list[dict[str, Any]]:
+    try:
+        return list(json.loads(Path(__file__).with_name("seed_recipes.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
+
+
+SEEDS = _seeds()  # hand-written recipes, each one built in FreeCAD and its volume checked by hand (mcp_servers/tests build them again)
 
 
 class SkillLibrary:
     def __init__(self, root: Path) -> None:
         self._path = root / "skills.json"
 
-    def all(self) -> list[dict[str, Any]]:
+    def _learned(self) -> list[dict[str, Any]]:
         try:
             return list(json.loads(self._path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return []
 
+    def all(self) -> list[dict[str, Any]]:
+        """The recipes the lab learned, after the hand-checked seeds shipped with the code (a learned one replaces a seed of the same key)."""
+        learned = self._learned()
+        taken = {s["key"] for s in learned}
+        return [s for s in SEEDS if s["key"] not in taken] + learned
+
     def add(self, key: str, text: str, recipe: dict[str, Any], source: str) -> None:
         """Keep a checked recipe under `key` (a new one for the same key replaces the old)."""
-        rows = [s for s in self.all() if s["key"] != key]
+        rows = [s for s in self._learned() if s["key"] != key]
         rows.append({"key": key, "text": text[:300], "recipe": recipe, "source": source})
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps(rows[-MAX_SKILLS:], ensure_ascii=False), encoding="utf-8")

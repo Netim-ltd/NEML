@@ -19,6 +19,7 @@ from neml_brain.evolution.generative import (
     model_name,
     urdf_of,
 )
+from neml_brain.evolution.judges import equip
 from neml_brain.evolution.urdf_assembly import assemble
 from neml_brain.learning.store import LearningStore
 
@@ -41,6 +42,7 @@ PLAN = {
             "parent": "base",
             "role": "sol tekerlek",
             "source": "bought",
+            "part": "tt_wheel",
             "dims_mm": [60, 60, 20],
             "mass_g": 80,
             "joint": {
@@ -58,6 +60,7 @@ PLAN = {
             "parent": "base",
             "role": "sağ tekerlek",
             "source": "bought",
+            "part": "tt_wheel",
             "dims_mm": [60, 60, 20],
             "mass_g": 80,
             "joint": {
@@ -263,7 +266,7 @@ async def test_a_restarted_design_reuses_its_plan_and_the_parts_already_built(tm
 
     llm = Llm()
     gen = Generator(Mcp(tmp_path), Importer(), sessions, llm, LearningStore(tmp_path / "l"), tmp_path / "gen")
-    ckpt = {"plan": PLAN, "out": "abc", "built": {}}
+    ckpt = {"plan": equip(PLAN), "out": "abc", "built": {}}  # a stored plan went through equip() in _plan
     saved = []
     out = await gen.design("x", "owner", ckpt=ckpt, save=lambda: saved.append(len(ckpt["built"])))
     assert out["model"] == "bahce_gezgini"

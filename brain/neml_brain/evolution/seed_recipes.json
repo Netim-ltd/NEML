@@ -1,0 +1,1241 @@
+[
+ {
+  "key": "servo_u_braketi",
+  "text": "U braket: 40 x 24 mm, 3 mm taban ve iki 3 mm'lik 20 mm yüksek yan duvar, duvarlardan geçen iki adet 2.2 mm delik (servo bağlantısı)",
+  "recipe": {
+   "solids": [
+    {
+     "id": "base",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      40,
+      24,
+      3
+     ]
+    },
+    {
+     "id": "w1",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      40,
+      3,
+      20
+     ]
+    },
+    {
+     "id": "w2",
+     "t": "box",
+     "at": [
+      0,
+      21,
+      0
+     ],
+     "size": [
+      40,
+      3,
+      20
+     ]
+    },
+    {
+     "id": "h1",
+     "t": "cyl",
+     "at": [
+      8,
+      -1,
+      12
+     ],
+     "r": 1.1,
+     "h": 26,
+     "axis": "y"
+    },
+    {
+     "id": "h2",
+     "t": "cyl",
+     "at": [
+      32,
+      -1,
+      12
+     ],
+     "r": 1.1,
+     "h": 26,
+     "axis": "y"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "base",
+     "b": "w1",
+     "out": "s1"
+    },
+    {
+     "op": "fuse",
+     "a": "s1",
+     "b": "w2",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "h1",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "h2",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "batarya_yuvasi",
+  "text": "Batarya yuvası: 70 x 40 x 12 mm blok, içinde 66 x 36 mm, 10 mm derinlikte cep (2 mm duvar ve taban), cep tabanında iki adet 3.2 mm bağlantı deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "blk",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      70,
+      40,
+      12
+     ]
+    },
+    {
+     "id": "pocket",
+     "t": "box",
+     "at": [
+      2,
+      2,
+      2
+     ],
+     "size": [
+      66,
+      36,
+      12
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "blk",
+     "b": "pocket",
+     "out": "result"
+    }
+   ],
+   "result": "result",
+   "features": [
+    {
+     "f": "hole",
+     "kind": "plain",
+     "at": [
+      8,
+      20,
+      2
+     ],
+     "axis": "z",
+     "dir": "-",
+     "d": 3.2,
+     "depth": 2
+    },
+    {
+     "f": "hole",
+     "kind": "plain",
+     "at": [
+      62,
+      20,
+      2
+     ],
+     "axis": "z",
+     "dir": "-",
+     "d": 3.2,
+     "depth": 2
+    }
+   ]
+  },
+  "source": "seed"
+ },
+ {
+  "key": "tekerlek_poyrasi",
+  "text": "Tekerlek poyrası: 32 mm çaplı, 10 mm kalınlıkta disk, ortada 6 mm mil deliği ve merkezden 10 mm uzakta dört adet 3.2 mm vida deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "hub",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 16,
+     "h": 10,
+     "axis": "z"
+    },
+    {
+     "id": "bore",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      -1
+     ],
+     "r": 3,
+     "h": 12,
+     "axis": "z"
+    },
+    {
+     "id": "a",
+     "t": "cyl",
+     "at": [
+      10,
+      0,
+      -1
+     ],
+     "r": 1.6,
+     "h": 12,
+     "axis": "z"
+    },
+    {
+     "id": "b",
+     "t": "cyl",
+     "at": [
+      -10,
+      0,
+      -1
+     ],
+     "r": 1.6,
+     "h": 12,
+     "axis": "z"
+    },
+    {
+     "id": "c",
+     "t": "cyl",
+     "at": [
+      0,
+      10,
+      -1
+     ],
+     "r": 1.6,
+     "h": 12,
+     "axis": "z"
+    },
+    {
+     "id": "d",
+     "t": "cyl",
+     "at": [
+      0,
+      -10,
+      -1
+     ],
+     "r": 1.6,
+     "h": 12,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "hub",
+     "b": "bore",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "a",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "b",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "c",
+     "out": "s4"
+    },
+    {
+     "op": "cut",
+     "a": "s4",
+     "b": "d",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "rulman_yatagi",
+  "text": "Rulman yatağı: 40 x 40 x 16 mm blok, ortada 22 mm çaplı geçişli rulman yuvası (608 rulman) ve köşelerde dört adet 3.4 mm vida deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "blk",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      40,
+      40,
+      16
+     ]
+    },
+    {
+     "id": "brg",
+     "t": "cyl",
+     "at": [
+      20,
+      20,
+      -1
+     ],
+     "r": 11,
+     "h": 18,
+     "axis": "z"
+    },
+    {
+     "id": "m1",
+     "t": "cyl",
+     "at": [
+      5,
+      5,
+      -1
+     ],
+     "r": 1.7,
+     "h": 18,
+     "axis": "z"
+    },
+    {
+     "id": "m2",
+     "t": "cyl",
+     "at": [
+      35,
+      5,
+      -1
+     ],
+     "r": 1.7,
+     "h": 18,
+     "axis": "z"
+    },
+    {
+     "id": "m3",
+     "t": "cyl",
+     "at": [
+      5,
+      35,
+      -1
+     ],
+     "r": 1.7,
+     "h": 18,
+     "axis": "z"
+    },
+    {
+     "id": "m4",
+     "t": "cyl",
+     "at": [
+      35,
+      35,
+      -1
+     ],
+     "r": 1.7,
+     "h": 18,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "blk",
+     "b": "brg",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "m1",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "m2",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "m3",
+     "out": "s4"
+    },
+    {
+     "op": "cut",
+     "a": "s4",
+     "b": "m4",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "n20_motor_kelepcesi",
+  "text": "N20 motor tutucu: 24 x 16 x 20 mm blok, yatay (x ekseni) boyunca 12.2 mm çaplı motor deliği, bloğun iki yanında 3 mm kalınlıkta kulaklar ve kulaklarda 3.2 mm vida delikleri",
+  "recipe": {
+   "solids": [
+    {
+     "id": "blk",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      24,
+      16,
+      20
+     ]
+    },
+    {
+     "id": "ears",
+     "t": "box",
+     "at": [
+      0,
+      -8,
+      0
+     ],
+     "size": [
+      24,
+      32,
+      3
+     ]
+    },
+    {
+     "id": "mot",
+     "t": "cyl",
+     "at": [
+      -1,
+      8,
+      10
+     ],
+     "r": 6.1,
+     "h": 26,
+     "axis": "x"
+    },
+    {
+     "id": "e1",
+     "t": "cyl",
+     "at": [
+      12,
+      -4,
+      -1
+     ],
+     "r": 1.6,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "e2",
+     "t": "cyl",
+     "at": [
+      12,
+      20,
+      -1
+     ],
+     "r": 1.6,
+     "h": 6,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "blk",
+     "b": "ears",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "mot",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "e1",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "e2",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "mesafe_burcu",
+  "text": "Mesafe burcu: 7 mm dış çaplı, 12 mm uzunlukta silindir, ortadan geçen 3.2 mm delik",
+  "recipe": {
+   "solids": [
+    {
+     "id": "body",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 3.5,
+     "h": 12,
+     "axis": "z"
+    },
+    {
+     "id": "bore",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      -1
+     ],
+     "r": 1.6,
+     "h": 14,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "body",
+     "b": "bore",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "kasnak_bosu",
+  "text": "Kasnak: 16 mm çaplı, 10 mm yüksek gövde, alt ve üstte 22 mm çaplı 1.5 mm kalınlıkta kenar flanşı, ortada 5 mm mil deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "core",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 8,
+     "h": 10,
+     "axis": "z"
+    },
+    {
+     "id": "f1",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "r": 11,
+     "h": 1.5,
+     "axis": "z"
+    },
+    {
+     "id": "f2",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      8.5
+     ],
+     "r": 11,
+     "h": 1.5,
+     "axis": "z"
+    },
+    {
+     "id": "bore",
+     "t": "cyl",
+     "at": [
+      0,
+      0,
+      -1
+     ],
+     "r": 2.5,
+     "h": 12,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "core",
+     "b": "f1",
+     "out": "s1"
+    },
+    {
+     "op": "fuse",
+     "a": "s1",
+     "b": "f2",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "bore",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "kart_tabani",
+  "text": "Kart tabanı: 70 x 50 x 3 mm plaka, dört köşesinde 6 mm yüksek, 6 mm çaplı dikmeler ve dikmelerden plakayı geçen 2.5 mm vida delikleri",
+  "recipe": {
+   "solids": [
+    {
+     "id": "pl",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      70,
+      50,
+      3
+     ]
+    },
+    {
+     "id": "p1",
+     "t": "cyl",
+     "at": [
+      4,
+      4,
+      3
+     ],
+     "r": 3,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "p2",
+     "t": "cyl",
+     "at": [
+      66,
+      4,
+      3
+     ],
+     "r": 3,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "p3",
+     "t": "cyl",
+     "at": [
+      4,
+      46,
+      3
+     ],
+     "r": 3,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "p4",
+     "t": "cyl",
+     "at": [
+      66,
+      46,
+      3
+     ],
+     "r": 3,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "h1",
+     "t": "cyl",
+     "at": [
+      4,
+      4,
+      -1
+     ],
+     "r": 1.25,
+     "h": 11,
+     "axis": "z"
+    },
+    {
+     "id": "h2",
+     "t": "cyl",
+     "at": [
+      66,
+      4,
+      -1
+     ],
+     "r": 1.25,
+     "h": 11,
+     "axis": "z"
+    },
+    {
+     "id": "h3",
+     "t": "cyl",
+     "at": [
+      4,
+      46,
+      -1
+     ],
+     "r": 1.25,
+     "h": 11,
+     "axis": "z"
+    },
+    {
+     "id": "h4",
+     "t": "cyl",
+     "at": [
+      66,
+      46,
+      -1
+     ],
+     "r": 1.25,
+     "h": 11,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "pl",
+     "b": "p1",
+     "out": "s1"
+    },
+    {
+     "op": "fuse",
+     "a": "s1",
+     "b": "p2",
+     "out": "s2"
+    },
+    {
+     "op": "fuse",
+     "a": "s2",
+     "b": "p3",
+     "out": "s3"
+    },
+    {
+     "op": "fuse",
+     "a": "s3",
+     "b": "p4",
+     "out": "s4"
+    },
+    {
+     "op": "cut",
+     "a": "s4",
+     "b": "h1",
+     "out": "s5"
+    },
+    {
+     "op": "cut",
+     "a": "s5",
+     "b": "h2",
+     "out": "s6"
+    },
+    {
+     "op": "cut",
+     "a": "s6",
+     "b": "h3",
+     "out": "s7"
+    },
+    {
+     "op": "cut",
+     "a": "s7",
+     "b": "h4",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "mesafe_sensor_tutucu",
+  "text": "Mesafe sensörü tutucu: 56 x 26 x 4 mm plaka, iki adet 16.5 mm çaplı sensör penceresi (merkezler 28 mm arayla) ve uçlarda iki adet 3.2 mm vida deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "pl",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      56,
+      26,
+      4
+     ]
+    },
+    {
+     "id": "w1",
+     "t": "cyl",
+     "at": [
+      14,
+      13,
+      -1
+     ],
+     "r": 8.25,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "w2",
+     "t": "cyl",
+     "at": [
+      42,
+      13,
+      -1
+     ],
+     "r": 8.25,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "m1",
+     "t": "cyl",
+     "at": [
+      3,
+      13,
+      -1
+     ],
+     "r": 1.6,
+     "h": 6,
+     "axis": "z"
+    },
+    {
+     "id": "m2",
+     "t": "cyl",
+     "at": [
+      53,
+      13,
+      -1
+     ],
+     "r": 1.6,
+     "h": 6,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "pl",
+     "b": "w1",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "w2",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "m1",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "m2",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "baglanti_kolu",
+  "text": "Bağlantı kolu: 60 mm toplam uzunlukta, 10 mm genişlikte, 3 mm kalın, uçları yuvarlak kol; iki uçta 3.2 mm mafsal deliği (delik merkezleri 50 mm arayla)",
+  "recipe": {
+   "solids": [
+    {
+     "id": "bar",
+     "t": "box",
+     "at": [
+      5,
+      0,
+      0
+     ],
+     "size": [
+      50,
+      10,
+      3
+     ]
+    },
+    {
+     "id": "e1",
+     "t": "cyl",
+     "at": [
+      5,
+      5,
+      0
+     ],
+     "r": 5,
+     "h": 3,
+     "axis": "z"
+    },
+    {
+     "id": "e2",
+     "t": "cyl",
+     "at": [
+      55,
+      5,
+      0
+     ],
+     "r": 5,
+     "h": 3,
+     "axis": "z"
+    },
+    {
+     "id": "h1",
+     "t": "cyl",
+     "at": [
+      5,
+      5,
+      -1
+     ],
+     "r": 1.6,
+     "h": 5,
+     "axis": "z"
+    },
+    {
+     "id": "h2",
+     "t": "cyl",
+     "at": [
+      55,
+      5,
+      -1
+     ],
+     "r": 1.6,
+     "h": 5,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "bar",
+     "b": "e1",
+     "out": "s1"
+    },
+    {
+     "op": "fuse",
+     "a": "s1",
+     "b": "e2",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "h1",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "h2",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "boru_kelepcesi",
+  "text": "Boru kelepçesi: 40 x 24 x 24 mm blok, y ekseni boyunca 16 mm çaplı geçişli boru deliği ve iki yanda düşey 3.2 mm vida deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "blk",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      40,
+      24,
+      24
+     ]
+    },
+    {
+     "id": "tube",
+     "t": "cyl",
+     "at": [
+      20,
+      -1,
+      12
+     ],
+     "r": 8,
+     "h": 26,
+     "axis": "y"
+    },
+    {
+     "id": "b1",
+     "t": "cyl",
+     "at": [
+      5,
+      12,
+      -1
+     ],
+     "r": 1.6,
+     "h": 26,
+     "axis": "z"
+    },
+    {
+     "id": "b2",
+     "t": "cyl",
+     "at": [
+      35,
+      12,
+      -1
+     ],
+     "r": 1.6,
+     "h": 26,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "cut",
+     "a": "blk",
+     "b": "tube",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "b1",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "b2",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "kapak",
+  "text": "Kapak: 80 x 50 x 3 mm plaka, üzerinde 74 x 44 mm ve 2 mm yüksek oturma çıkıntısı, köşelerde dört adet 3.2 mm vida deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "pl",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      80,
+      50,
+      3
+     ]
+    },
+    {
+     "id": "lip",
+     "t": "box",
+     "at": [
+      3,
+      3,
+      3
+     ],
+     "size": [
+      74,
+      44,
+      2
+     ]
+    },
+    {
+     "id": "h1",
+     "t": "cyl",
+     "at": [
+      5,
+      5,
+      -1
+     ],
+     "r": 1.6,
+     "h": 8,
+     "axis": "z"
+    },
+    {
+     "id": "h2",
+     "t": "cyl",
+     "at": [
+      75,
+      5,
+      -1
+     ],
+     "r": 1.6,
+     "h": 8,
+     "axis": "z"
+    },
+    {
+     "id": "h3",
+     "t": "cyl",
+     "at": [
+      5,
+      45,
+      -1
+     ],
+     "r": 1.6,
+     "h": 8,
+     "axis": "z"
+    },
+    {
+     "id": "h4",
+     "t": "cyl",
+     "at": [
+      75,
+      45,
+      -1
+     ],
+     "r": 1.6,
+     "h": 8,
+     "axis": "z"
+    }
+   ],
+   "steps": [
+    {
+     "op": "fuse",
+     "a": "pl",
+     "b": "lip",
+     "out": "s1"
+    },
+    {
+     "op": "cut",
+     "a": "s1",
+     "b": "h1",
+     "out": "s2"
+    },
+    {
+     "op": "cut",
+     "a": "s2",
+     "b": "h2",
+     "out": "s3"
+    },
+    {
+     "op": "cut",
+     "a": "s3",
+     "b": "h3",
+     "out": "s4"
+    },
+    {
+     "op": "cut",
+     "a": "s4",
+     "b": "h4",
+     "out": "result"
+    }
+   ],
+   "result": "result"
+  },
+  "source": "seed"
+ },
+ {
+  "key": "kablo_girisli_kutu",
+  "text": "Açık üstlü kutu: 80 x 50 x 30 mm dış ölçü, 2 mm duvar, dikey köşeleri 2 mm yuvarlatılmış, bir kısa yan duvarında 10 mm çaplı kablo deliği",
+  "recipe": {
+   "solids": [
+    {
+     "id": "b",
+     "t": "box",
+     "at": [
+      0,
+      0,
+      0
+     ],
+     "size": [
+      80,
+      50,
+      30
+     ]
+    }
+   ],
+   "steps": [],
+   "result": "b",
+   "features": [
+    {
+     "f": "shell",
+     "t": 2,
+     "open": "z+"
+    },
+    {
+     "f": "hole",
+     "kind": "plain",
+     "at": [
+      0,
+      25,
+      15
+     ],
+     "axis": "x",
+     "dir": "+",
+     "d": 10
+    }
+   ],
+   "round": {
+    "kind": "fillet",
+    "r": 2,
+    "edges": "vertical"
+   }
+  },
+  "source": "seed"
+ }
+]

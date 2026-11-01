@@ -150,9 +150,9 @@ async def test_a_checked_recipe_is_kept_and_shown_for_a_similar_part_but_never_f
     bench = CadBench(Gen(), tmp_path / "w", tmp_path)
     bench.start()
     await bench._task  # noqa: SLF001
-    assert [s["key"] for s in lib.all()] == ["flans"]  # only the case that passed
+    assert [s["key"] for s in lib.all() if s["source"] != "seed"] == ["flans"]  # only the case that passed
     assert "flans" in lib.examples("Çapı 80 mm yuvarlak flanş, ortasında delik")
-    assert lib.examples("Çapı 80 mm yuvarlak flanş, ortasında delik", exclude="flans") == ""
+    assert "flans" not in lib.examples("Çapı 80 mm yuvarlak flanş, ortasında delik", exclude="flans")  # seeds may be shown, its own answer never
 
 
 def test_the_benchmark_has_more_than_nine_cases_with_unique_ids():
