@@ -9,6 +9,7 @@ Run:  uvicorn neml_brain.main:app --host 0.0.0.0 --port 8080
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -96,6 +97,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     MCP daemon on the machine. Move them to module level the day startup cost
     matters more than that.
     """
+    import faulthandler
+    import sys
+
+    # The brain has frozen twice, both right after a model reply: if the loop is blocked, say where (stacks of every thread).
+    faulthandler.dump_traceback_later(20, repeat=True, file=sys.stderr)
+
+    async def _beat() -> None:
+        while True:
+            faulthandler.cancel_dump_traceback_later()  # the loop is alive: re-arm, so a dump means it was stuck for 20 s
+            faulthandler.dump_traceback_later(20, repeat=True, file=sys.stderr)
+            await asyncio.sleep(5)
+
+    beat = asyncio.create_task(_beat())
+
     from neml_brain import services
     from neml_brain.agents.base import Deps
     from neml_brain.bridge.client import CloudBridge
@@ -518,13 +533,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_instances=1,
         next_run_time=datetime.now(UTC),
     )
-    scheduler.add_job(
-        initiative_job,
-        IntervalTrigger(hours=2),
-        id="initiative",
-        replace_existing=True,
-        max_instances=1,
-    )
+    if os.environ.get("NEML_INITIATIVE") == "1":  # off by default: whole robots the lab dreams up are not checked against anything real
+        scheduler.add_job(
+            initiative_job,
+            IntervalTrigger(hours=2),
+            id="initiative",
+            replace_existing=True,
+            max_instances=1,
+        )
     scheduler.add_job(
         radar_job, IntervalTrigger(minutes=15), id="radar", replace_existing=True, max_instances=1
     )
@@ -585,6 +601,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        beat.cancel()
+        faulthandler.cancel_dump_traceback_later()
         scheduler.shutdown(wait=False)
         await state.bridge.stop()
         await state.orchestrator.aclose()
