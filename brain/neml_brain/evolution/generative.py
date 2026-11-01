@@ -138,6 +138,8 @@ PLAN_PROMPT = (
     "joint (parent'a bağlandığı yer x,y,z mm cinsinden parent çerçevesinde; fixed ya da revolute; revolute için axis ve lower_deg/upper_deg). "
     "Parçalar birbirinin içine girmesin; servoyu hareket ettireceği parçanın eklem noktasına koy. En az 2, en çok {max} link. JSON'u boşluksuz, tek satırda yaz.\n"
     "Hareketli robotta kontrolcü kartı, batarya ve acil durdurma düğmesi (estop_22mm) olmalı; her döner eklem için yeterli torklu servo/DC motor seç.\n"
+    "Tekerlekli robotta tekerlekleri (katalogdaki 'wheel' parçaları, revolute, aynı yatay axis) gövdenin iki yanına simetrik koy; gövde tekerlek tabanından yukarıda ama en fazla 25 cm yüksekte olsun. "
+    "Simülasyon bu robotu olduğu gibi sürer: gövdesi, tekerlekleri ve kütleleri sonucu belirler.\n"
     "Katalog:\n{catalog}\n"
     "Bilinen notlar:\n{notes}"
 )
@@ -205,7 +207,7 @@ def sim_hint(root: Path) -> str:
         if passes.get(world, 0) > 0:
             continue
         advice = next((a for w, a in TERRAIN_ADVICE if w in world), "")
-        reason = "devrildi: tabanı genişlet, ağırlık merkezini alçalt" if why.get("tipped") else f"hedefe varamadı ({why.get('x_m')} m gitti)"
+        reason = why.get("error") or ("devrildi: tabanı genişlet, ağırlık merkezini alçalt" if why.get("tipped") else f"hedefe varamadı ({why.get('x_m')} m gitti)")
         lines.append(f"- {world}: {reason}" + (f"; {advice}" if advice else ""))
     return ("\n\nSimülasyonda mevcut robotlar şu ortamlarda başarısız oluyor; planı buna göre güçlendir:\n" + "\n".join(lines[:5])) if lines else ""
 
@@ -867,6 +869,7 @@ class Generator:
                 "purpose": plan["purpose"],
                 "by": actor,
                 "findings": (findings or [])[:8],  # the hard judges' numbers: the round table argues about the fix, not the fact
+                "plan": plan,  # kept so the simulation can run this very robot
             }
             draft_id, draft_body = await runner._new_genome(
                 session, {**seed, "id": None, "version": 0}, body, status="draft"

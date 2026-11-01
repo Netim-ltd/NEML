@@ -116,6 +116,13 @@ def robot_issues(plan: dict[str, Any]) -> list[str]:
                 out.append(f"hareketli robotta {label} yok")
         if not any(p["id"] == "estop_22mm" for p in kinds.get("switch", [])):
             out.append("acil durdurma düğmesi (estop_22mm) eklenmeli")
+    if wheels:  # the simulation runs the design itself: a wheeled plan it cannot drive goes back to the model now
+        from neml_brain.evolution.robot_sdf import NotDrivable, sdf_of
+
+        try:
+            sdf_of(plan)
+        except NotDrivable as exc:
+            out.append(f"sürülemez: {exc}")
     tip = round(tip_margin(plan), 2)
     if tip < MIN_TIP:
         out.append(f"devrilme payı {tip} (en az {MIN_TIP}): ağırlık merkezi çok yüksek ya da taban dar")

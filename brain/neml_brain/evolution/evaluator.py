@@ -137,8 +137,9 @@ class BodyEvaluator:
         seconds: float = 6.0,
         label: str = "",
         on_frame: Callable[[Any], Awaitable[None]] | None = None,
+        robot_sdf: Path | None = None,
     ) -> tuple[Path, dict[str, float]]:
-        """Run the chassis in the `visual` profile, photographing it every half second.
+        """Run the chassis (or the design's `robot_sdf`) in the `visual` profile.
 
         Returns the annotated GIF and the run's final metrics. The run is the same physics as
         `sim` (same policy, same seed, same randomisation); only the camera is added.
@@ -166,7 +167,7 @@ class BodyEvaluator:
                 "sim",
                 "spawn_robot",
                 {
-                    "urdf_path": str(self._chassis(body_kg, camera=True)),
+                    "urdf_path": str(robot_sdf or self._chassis(body_kg, camera=True)),
                     "pose": {
                         "x_m": WORLD_START.get(world_id, (0.0, 0.0, 0.0))[0],
                         "y_m": WORLD_START.get(world_id, (0.0, 0.0, 0.0))[1],

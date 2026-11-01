@@ -10,6 +10,7 @@ needs: the genome rows, the recorded runs and the scenes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
@@ -161,6 +162,22 @@ class EvolutionRunner:
             }
         mass = float(spec.get("mass_kg") or active["body"]["mechanical"]["body_mass_kg"])
         seed = int(spec.get("seed", 7))
+        plan = (active["body"]["mechanical"].get("generated") or {}).get("plan")
+        robot_sdf: Path | None = None
+        if plan:  # a generated design runs as itself (the stand-in only for designs without a kept plan)  # noqa: E501
+            from neml_brain.evolution.robot_sdf import NotDrivable, sdf_of
+
+            try:
+                text, facts = sdf_of(plan, camera=True)
+            except NotDrivable as exc:
+                learn_note("sim", "not_drivable", f"{active['name']}: {exc}")
+                err = {"error": f"sürülemez: {exc}", "not_drivable": True}
+                return {"outcome": "failure", "metrics": err}
+            tag = hashlib.sha256(text.encode()).hexdigest()[:8]
+            robot_sdf = self.ev.dir / "models" / f"{active['name']}_{tag}.sdf"
+            robot_sdf.parent.mkdir(parents=True, exist_ok=True)
+            robot_sdf.write_text(text, encoding="utf-8")
+            mass = facts["mass_kg"]
         try:
             path, values = await self.ev.record(
                 mass,
@@ -169,6 +186,7 @@ class EvolutionRunner:
                 seconds,
                 world,
                 on_frame=self._live(spec.get("model") or active["name"]),
+                robot_sdf=robot_sdf,
             )
         except Exception as exc:  # noqa: BLE001
             learn_note(
@@ -195,6 +213,7 @@ class EvolutionRunner:
                 "x_m": round(values.get("x_m", 0.0), 3),
                 "goal_reached": reached,
                 "tipped_over": bool(values.get("safety_violation")),
+                "stand_in": robot_sdf is None,
                 "media": media,
             },
         }
