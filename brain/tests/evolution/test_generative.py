@@ -306,3 +306,19 @@ def test_the_layout_solver_separates_links_that_sit_in_each_other():
     assert layout_issues(stacked)
     assert layout_issues(repair_layout(stacked)) == []
     assert repair_layout(PLAN)["links"][0] == PLAN["links"][0]
+
+
+def test_the_plan_is_told_where_the_lab_robots_keep_losing(tmp_path):
+    import json
+
+    from neml_brain.evolution.generative import sim_hint
+
+    assert sim_hint(tmp_path) == ""  # no runs yet
+    rec = {"runs": 50, "passes": {"stair_hall_d1_s0": 0, "warehouse_d1_s0": 2},
+           "fails": {"stair_hall_d1_s0": {"tipped": True, "x_m": 0.4}, "warehouse_d1_s0": {"tipped": False, "x_m": 1.0}}}
+    (tmp_path / "sweeps.json").write_text(json.dumps(rec), encoding="utf-8")
+    hint = sim_hint(tmp_path)
+    assert "stair_hall_d1_s0: devrildi" in hint and "merdiven" in hint
+    assert "warehouse" not in hint  # it passes there
+    (tmp_path / "sweeps.json").write_text(json.dumps({**rec, "runs": 5}), encoding="utf-8")
+    assert sim_hint(tmp_path) == ""  # a few runs are noise

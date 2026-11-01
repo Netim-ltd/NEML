@@ -183,6 +183,33 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
     return use_catalog({**raw, "links": [root, *raw["links"]]})
 
 
+TERRAIN_ADVICE = (  # (word in the world name, advice for a robot that keeps losing there)
+    ("stair", "merdiven: basamaktan büyük çaplı tekerlek/ayak ya da bacaklı yürüyüş, yüksek torklu aktüatör"),
+    ("ramp", "rampa: yüksek torklu motor, yüksek sürtünmeli lastik/ayak, alçak ağırlık merkezi"),
+    ("obstacle", "engel: yerden yüksek gövde, büyük tekerlek"),
+)
+
+
+def sim_hint(root: Path) -> str:
+    """What the lab's own simulation runs say about the robots it has: terrains where they keep losing, and why, as advice for the
+    next plan. Nothing before 20 runs (a few failures are noise). # ponytail: advice is per terrain word, not per failure physics."""
+    try:
+        rec = json.loads((root / "sweeps.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    if int(rec.get("runs", 0)) < 20:
+        return ""
+    lines = []
+    passes, fails = rec.get("passes", {}), rec.get("fails", {})
+    for world, why in fails.items():
+        if passes.get(world, 0) > 0:
+            continue
+        advice = next((a for w, a in TERRAIN_ADVICE if w in world), "")
+        reason = "devrildi: tabanı genişlet, ağırlık merkezini alçalt" if why.get("tipped") else f"hedefe varamadı ({why.get('x_m')} m gitti)"
+        lines.append(f"- {world}: {reason}" + (f"; {advice}" if advice else ""))
+    return ("\n\nSimülasyonda mevcut robotlar şu ortamlarda başarısız oluyor; planı buna göre güçlendir:\n" + "\n".join(lines[:5])) if lines else ""
+
+
 def check_plan(plan: dict[str, Any]) -> list[str]:
     """Why a plan cannot be built (empty = fine): one root, parents before children, unique names, sane mass."""
     links = plan.get("links") or []
@@ -515,7 +542,7 @@ class Generator:
             progress(f"plan {attempt + 1}")
             try:
                 raw = await self._llm.fill(
-                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + problem,
+                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + sim_hint(self._learn.root) + problem,
                     PLAN_SCHEMA,
                     profile="param_skill",
                     max_tokens=4000,

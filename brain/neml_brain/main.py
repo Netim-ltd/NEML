@@ -320,6 +320,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         passes = dict(record.get("passes", {}))
         passed = out.get("outcome") == "success" and bool(metrics.get("goal_reached"))
         passes[world] = passes.get(world, 0) + 1 if passed else 0
+        fails = {w: m for w, m in dict(record.get("fails", {})).items() if w != world}
+        if not passed:  # why the robot lost, so the next plan is told (generative.sim_hint)
+            fails[world] = {"tipped": bool(metrics.get("tipped_over")), "x_m": metrics.get("x_m"), "mass_kg": metrics.get("mass_kg")}
         grown = None
         if passes[world] >= 3:
             made = world_store.next_harder(world)
@@ -338,6 +341,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "last_world": world,
                 "last_outcome": out.get("outcome"),
                 "passes": passes,
+                "fails": fails,
                 "grown": grown or record.get("grown"),
                 "last_metrics": {k: v for k, v in metrics.items() if k != "media"},
             },
