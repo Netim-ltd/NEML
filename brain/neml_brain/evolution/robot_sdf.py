@@ -65,7 +65,8 @@ def sdf_of(plan: dict[str, Any], camera: bool = False) -> tuple[str, dict[str, A
     left = [n for n in wheels if centre[n][1] > yc]
     right = [n for n in wheels if centre[n][1] <= yc]
     if not left or not right:
-        raise NotDrivable("tekerlekler gövdenin tek yanında; sol ve sağ tekerlek gerekir")
+        have = sorted(round(centre[n][1]) for n in wheels)
+        raise NotDrivable(f"tekerlekler gövdenin tek yanında (y konumları {have} mm); sol ve sağ tekerlek gerekir: her tekerleği y ekseninde karşı yana (−y) aynı x ve z ile yansıt")
 
     rad = {n: max(size[n][0], size[n][2]) / 2 * MM for n in wheels}
     width = {n: size[n][1] * MM for n in wheels}
@@ -85,9 +86,14 @@ def sdf_of(plan: dict[str, Any], camera: bool = False) -> tuple[str, dict[str, A
     low = min((centre[n][2] - size[n][2] / 2) * MM for n in body)
     clearance = low - z0
     if clearance < -0.002:
-        raise NotDrivable(f"gövde tekerlek tabanından {-clearance * 1000:.0f} mm aşağıda: zemine sürtünür; tekerlekleri büyüt ya da gövdeyi yükselt")
+        d = -clearance * 1000
+        raise NotDrivable(
+            f"gövde tekerlek tabanından {d:.0f} mm aşağıda: zemine sürtünür; çözüm: gövde linklerinin z konumunu {d + 5:.0f} mm artır "
+            f"(ya da tekerlek çapını {2 * (d + 5):.0f} mm büyüt, tekerlek merkezi aynı kalsın)"
+        )
     if clearance > 0.25:
-        raise NotDrivable(f"gövde zeminden {clearance * 1000:.0f} mm yukarıda: devrilir; tekerlekleri büyüt ya da gövdeyi alçalt")
+        d = clearance * 1000
+        raise NotDrivable(f"gövde zeminden {d:.0f} mm yukarıda: devrilir; çözüm: gövde linklerinin z konumunu {d - 200:.0f} mm azalt ya da tekerlek çapını {2 * (d - 200):.0f} mm büyüt")
 
     def pose(x: float, y: float, z: float, r: float = 0.0, p: float = 0.0, w: float = 0.0) -> str:
         return f"<pose>{x:.5f} {y:.5f} {z - z0:.5f} {r:.5f} {p:.5f} {w:.5f}</pose>"
