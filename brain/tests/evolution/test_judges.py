@@ -194,3 +194,10 @@ def test_thickened_makes_a_thin_bar_pass_the_beam_check():
     assert got["steps"][-1] == {"op": "fuse", "a": "a", "b": "sturdy", "out": "sturdy_part"} and got["result"] == "sturdy_part"
     assert structure.generic_link([20, 3, 3], 180, "PLA", 1.2, 5)
     assert not structure.generic_link([20, 6, 6], 720, "PLA", 1.2, 5)
+
+
+def test_tidy_survives_a_step_that_outputs_its_own_input():
+    loop = {"solids": [{"id": "a"}], "steps": [{"op": "fuse", "a": "a", "b": "a", "out": "a"}], "result": "a"}
+    from neml_brain.evolution.judges import tidy
+
+    assert tidy(loop)["result"] == "a"  # used to spin for ever and freeze the whole brain

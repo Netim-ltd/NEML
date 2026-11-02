@@ -136,7 +136,9 @@ def tidy(recipe: dict[str, Any]) -> dict[str, Any]:
     alias: dict[str, str] = {}
 
     def at(name: Any) -> Any:
-        while name in alias:
+        seen = set()
+        while name in alias and name not in seen:  # a step whose output is its own input would loop here for ever
+            seen.add(name)
             name = alias[name]
         return name
 
@@ -144,7 +146,8 @@ def tidy(recipe: dict[str, Any]) -> dict[str, Any]:
     for st in (s for s in recipe.get("steps") or [] if isinstance(s, dict)):
         a, b = at(st.get("a")), at(st.get("b"))
         if a == b:
-            alias[st.get("out")] = a
+            if st.get("out") != a:  # x = x + x: leave it to the build to reject, not an alias to itself
+                alias[st.get("out")] = a
             continue
         steps.append({**st, "a": a, "b": b})
     result = at(recipe.get("result"))
