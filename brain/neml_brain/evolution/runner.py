@@ -164,6 +164,7 @@ class EvolutionRunner:
         seed = int(spec.get("seed", 7))
         plan = (active["body"]["mechanical"].get("generated") or {}).get("plan")
         robot_sdf: Path | None = None
+        facts: dict[str, Any] = {}
         if plan:  # a generated design runs as itself (the stand-in only for designs without a kept plan)  # noqa: E501
             from neml_brain.evolution.robot_sdf import NotDrivable, sdf_of
 
@@ -204,6 +205,11 @@ class EvolutionRunner:
         path.unlink(missing_ok=True)
         media = [media_entry("gif", url, f"{world} - {mass:.2f} kg")] if url else []
         reached = values.get("x_m", 0.0) >= 1.0 and not values.get("safety_violation")
+        if robot_sdf is not None:  # only the robot itself teaches the world model
+            from neml_brain.evolution.world_model import WorldModel
+
+            tipped = bool(values.get("safety_violation"))
+            WorldModel().log(facts, world, values.get("x_m", 0.0), tipped)
         return {
             "outcome": "success",
             "metrics": {

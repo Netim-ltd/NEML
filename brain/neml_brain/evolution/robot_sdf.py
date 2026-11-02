@@ -153,5 +153,5 @@ def sdf_of(plan: dict[str, Any], camera: bool = False) -> tuple[str, dict[str, A
     )
     sdf = f'<?xml version="1.0"?><sdf version="1.10"><model name="evo_chassis">{"".join(links)}{"".join(joints)}{plugin}</model></sdf>'
     mass_all = bm + sum(m(n) for n in wheels)
-    info = {"wheels": len(wheels), "casters": casters, "mass_kg": round(mass_all, 3), "clearance_mm": round(clearance * 1000), "track_mm": round(sep * 1000), "wheel_radius_mm": round(mean_r * 1000)}
+    info = {"wheels": len(wheels), "casters": casters, "mass_kg": round(mass_all, 3), "clearance_mm": round(clearance * 1000), "track_mm": round(sep * 1000), "wheel_radius_mm": round(mean_r * 1000), "base_mm": round((xmax - xmin) * 1000), "com_mm": round((com[2] - z0) * 1000)}
     return sdf, info

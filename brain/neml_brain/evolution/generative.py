@@ -47,6 +47,7 @@ from neml_brain.evolution.judges import (
     without_cuts,
 )
 from neml_brain.evolution.urdf_assembly import UrdfError, assemble
+from neml_brain.evolution.world_model import WorldModel
 from neml_brain.llm.provider import SchemaViolation
 from neml_brain.llm.schemas import MECH_PARAM_SCHEMA as RECIPE_SCHEMA
 
@@ -559,7 +560,7 @@ class Generator:
                 continue
             plan = equip(plan)  # the controller, battery, stop switch and actuators a moving robot needs come from the catalog
             best = plan
-            layout = [*layout_issues(plan), *robot_issues(plan)]
+            layout = [*layout_issues(plan), *robot_issues(plan), *WorldModel().warn(plan)]
             if not layout:
                 return dict(plan)
             progress(f"yerleşim eleştirisi: {len(layout)} sorun")
