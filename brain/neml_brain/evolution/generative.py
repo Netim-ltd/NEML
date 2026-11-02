@@ -675,6 +675,26 @@ class Generator:
                 error = f"\n\nÖnceki tarif reddedildi/başarısız: {str(exc)[:200]}. Düzelt."
         raise RuntimeError(f"{name}: parça üretilemedi ({error[-160:]})")
 
+    async def _mount(self, plan: dict[str, Any], lk: dict[str, Any], key: str, info: dict[str, Any], out: Path, progress: Any) -> dict[str, Any]:
+        """Screw holes under the bought parts that rest on this part (see mounts.py); the part as built stays when the rebuild fails."""
+        from neml_brain.evolution.mounts import MAX_FEATURES, mount_features
+
+        extra = mount_features(plan, lk, info["bbox"])
+        have = list(info["recipe"].get("features") or [])
+        extra = extra[: max(MAX_FEATURES - len(have), 0)]
+        if not extra:
+            return info
+        recipe = {**info["recipe"], "features": [*have, *extra]}
+        try:
+            again = await self._mcp.call("freecad", "build_recipe", {"recipe": recipe, "out_dir": str(out), "name": key, "process": "print"}, 120)
+        except Exception as exc:  # noqa: BLE001 - a part without its mounting holes is still a part
+            log.info("part.mount_failed", part=key, error=str(exc)[:120])
+            return info
+        if not 0.5 * info["volume_mm3"] < again["volume_mm3"] < info["volume_mm3"]:
+            return info  # the holes cut nothing or half the part away: the rebuild is not what was asked for
+        progress(f"{key}: {len(extra)} bağlantı deliği eklendi")
+        return {**again, "recipe": recipe, "quality": info.get("quality", []), "mounts": len(extra)}
+
     CAD_TOOLS = ("fit", "standard_part", "drawing", "build_recipe", "fem", "assemble")
 
     async def cad(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -743,6 +763,7 @@ class Generator:
                 key = slug(str(lk["name"]))
                 if key not in built or not (out / f"{key}.stl").exists():
                     built[key] = await self._part(lk, out, progress, body_kg=plan_mass(plan))
+                    built[key] = await self._mount(plan, lk, key, built[key], out, progress)
                     await self._draw(key, built[key], lk, out)
                     save()
                 meshes[key] = f"{key}.stl"
