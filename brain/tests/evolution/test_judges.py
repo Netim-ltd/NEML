@@ -168,7 +168,7 @@ def test_equip_adds_motor_drivers_and_a_servo_driver_board():
     root = {"name": "root", "parent": "", "role": "gövde", "source": "designed", "dims_mm": [200, 120, 40], "mass_g": 500,
             "joint": {"type": "fixed", "x": 0, "y": 0, "z": 0, "axis": "z"}}
     wheels = [{"name": f"tekerlek_{i}", "parent": "root", "role": "tekerlek", "source": "designed", "dims_mm": [65, 65, 26], "mass_g": 25,
-               "joint": {"type": "revolute", "x": 40 * i, "y": 80, "z": 0, "axis": "y"}} for i in range(4)]
+               "joint": {"type": "revolute", "x": 40 * (i // 2), "y": 80 if i % 2 else -80, "z": 0, "axis": "y"}} for i in range(4)]
     parts = [lk.get("part") for lk in equip({"links": [root, *wheels]})["links"]]
     assert parts.count("tb6612") == 2
 

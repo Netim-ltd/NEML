@@ -167,16 +167,50 @@ def tidy(recipe: dict[str, Any]) -> dict[str, Any]:
     return {**recipe, "solids": [s for s in solids if s.get("id") in needed] or solids, "steps": kept_steps, "result": result}
 
 
+def pair_wheels(plan: dict[str, Any]) -> dict[str, Any]:
+    """A wheeled plan whose wheels all sit on one side of the body (or stacked on the axle line) gets its missing pair: the wheels are
+    mirrored across the body centre line, or spread to both sides of the body when they share the centre line. Pure geometry the
+    model keeps getting wrong, so it is mended here instead of sent back.
+    # ponytail: wheels sharing one parent and one lateral axis only; anything stranger is still judged by sdf_of."""
+    from copy import deepcopy
+
+    from neml_brain.evolution.generative import layout, slug
+    from neml_brain.evolution.robot_sdf import _is_wheel
+
+    out = deepcopy(plan)
+    wheels = [lk for lk in out["links"] if _is_wheel(lk)]
+    axes = {lk["joint"]["axis"] for lk in wheels}
+    if not wheels or len(axes) != 1 or axes - {"x", "y"}:
+        return out
+    lat = 1 if axes == {"y"} else 0  # the axis the wheels are spread along (a wheel turning about y sits at +-y)
+    key = "xyz"[lat]
+    centre, size, _ = layout(out)
+    root = slug(str(out["links"][0]["name"]))
+    mid = centre[root][lat]
+    pos = [centre[slug(str(w["name"]))][lat] for w in wheels]
+    if max(pos) - min(pos) > 2 or (abs(pos[0] - mid) <= 5 and len(wheels) < 2):
+        return out  # already on both sides, or too irregular to guess
+    if abs(pos[0] - mid) <= 5:  # stacked on the centre line: alternate sides of the body
+        for i, w in enumerate(wheels):
+            side = 1 if i % 2 == 0 else -1
+            w["joint"][key] = round(float(w["joint"][key]) + side * (size[root][lat] / 2 + size[slug(str(w["name"]))][lat] / 2 - 0.0), 2)
+        return out
+    for w in wheels:  # all on one side: add the mirror image of each
+        twin = deepcopy(w)
+        twin["name"] = f"{w['name']}_ayna"
+        twin["joint"][key] = round(float(w["joint"][key]) - 2 * (centre[slug(str(w["name"]))][lat] - mid), 2)
+        out["links"].append(twin)
+    return out
+
+
 def equip(plan: dict[str, Any]) -> dict[str, Any]:
     """Complete a moving robot from the catalog: the controller, battery and stop switch it lacks, and for every driven joint without
     an actuator the lightest catalog motor/servo that carries the load with the safety factor. The model keeps designing the body;
     the bought essentials are not left to its memory. Added links sit on the root and the layout solver moves them apart.
     # ponytail: first-fit by weight, no voltage or current budget; the owner still checks the bill of materials."""
-    from copy import deepcopy
-
     from neml_brain.evolution.catalog import CATALOG
 
-    out = deepcopy(plan)
+    out = pair_wheels(plan)
     for lk in out["links"]:  # a slender printed bar thinner than MIN_SECTION fails the beam check whatever the recipe says
         d = [float(v) for v in lk["dims_mm"]]
         if lk["source"] == "designed" and max(d) >= 4 * min(d):

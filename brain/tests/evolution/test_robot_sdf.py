@@ -59,3 +59,27 @@ def test_the_plan_judge_sends_back_a_wheeled_plan_the_simulation_cannot_drive():
     assert not [i for i in robot_issues(plan) if i.startswith("sürülemez")]
     plan["links"][1]["joint"]["y"] = -60
     assert any(i.startswith("sürülemez") for i in robot_issues(plan))
+
+
+def _wheels(plan):
+    return [lk for lk in plan["links"] if lk["name"].startswith("wheel")]
+
+
+def test_a_wheel_on_one_side_gets_its_mirror_image_and_the_robot_drives():
+    plan = deepcopy(PLAN)
+    plan["links"] = [lk for lk in plan["links"] if lk["name"] != "wheel_r"]
+    fixed = equip(plan)
+    assert [lk["name"] for lk in _wheels(fixed)] == ["wheel_l", "wheel_l_ayna"]
+    sdf_of(fixed)  # no NotDrivable
+
+
+def test_wheels_stacked_on_the_centre_line_are_spread_to_both_sides():
+    plan = deepcopy(PLAN)
+    for lk in _wheels(plan):
+        lk["joint"]["y"] = 0
+    sdf, info = sdf_of(equip(plan))
+    assert info["track_mm"] > 0 and info["wheels"] == 2
+
+
+def test_wheels_already_on_both_sides_are_left_alone():
+    assert [lk["joint"]["y"] for lk in _wheels(equip(PLAN))] == [lk["joint"]["y"] for lk in _wheels(PLAN)]
