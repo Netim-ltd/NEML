@@ -24,3 +24,12 @@ def test_a_part_with_no_bought_children_or_a_side_mounted_one_gets_no_holes():
     wheel = next(lk for lk in plan["links"] if lk["name"] == "wheel_l")
     assert mount_features(plan, wheel, [-30, -10, -30, 30, 10, 30]) == []
     assert mount_features(plan, plan["links"][0], [-80, -50, -20, 80, 50, 60]) == []  # the children now sit inside, not on a face
+
+
+def test_a_motor_resting_on_a_side_wall_is_screwed_through_that_wall():
+    plan = equip(PLAN)
+    base = plan["links"][0]
+    motor = next(lk for lk in plan["links"] if lk["name"].startswith("n20_motor_1"))
+    motor["joint"].update(x=0, y=base["dims_mm"][1] / 2 + motor["dims_mm"][1] / 2, z=0)  # outside the +y wall
+    holes = [h for h in mount_features(plan, base, [-80, -50, -20, 80, 50, 20]) if h["axis"] == "y"]
+    assert len(holes) == 2 and all(h["dir"] == "-" and h["at"][1] == 50 for h in holes)
