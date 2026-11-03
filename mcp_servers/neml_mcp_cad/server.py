@@ -320,6 +320,16 @@ async def build_recipe(recipe: dict[str, Any], out_dir: str, name: str, timeout_
     return result
 
 
+async def run_script(source: str, out_dir: str, name: str, timeout_s: float = 60.0) -> dict[str, Any]:
+    """Build a part from a build123d Python script (variable `result`); checked, then run in a limited process. Same measurements as build_recipe."""
+    from . import script
+
+    try:
+        return await script.run_script(source, out_dir, name, timeout_s, _under_roots)
+    except script.ScriptError as exc:
+        raise CadError(str(exc)) from exc
+
+
 async def convert(source: str, target: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict[str, Any]:
     """STEP/IGES -> STL for the 3D viewer (an imported part); paths stay under /srv/neml."""
     for p in (source, target):
@@ -491,6 +501,7 @@ async def fem(step: str, material: str, fixed: str, load: dict[str, Any], mesh_m
 TOOLS: dict[str, Callable[..., Any]] = {
     "convert": convert,
     "build_recipe": build_recipe,
+    "run_script": run_script,
     "drawing": drawing,
     "standard_part": standard_part,
     "fit": fit,

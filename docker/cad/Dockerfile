@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends freecad gmsh py
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-# The CAD server needs the MCP plumbing, and numpy/scipy for the finite-element solver (trixie's Python 3.13 is outside neml-brain's range).
-RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir fastapi "uvicorn[standard]" numpy scipy
+# The CAD server needs the MCP plumbing, build123d (Open CASCADE) for model-written part scripts, and numpy/scipy for the finite-element solver (trixie's Python 3.13 is outside neml-brain's range).
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir fastapi "uvicorn[standard]" numpy scipy build123d
 COPY mcp_servers /app/mcp_servers
 
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
