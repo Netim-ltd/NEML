@@ -197,3 +197,26 @@ def test_a_note_the_benchmark_disproved_twice_is_rejected_and_no_longer_shown(tm
     nid = base.all()[0]["id"]
     assert base.judge(nid, False, {}) == "unverified" and base.judge(nid, False, {}) == "rejected"
     assert base.relevant("boş kural cümlesi") == [] and base.untested("cad") == []
+
+
+async def test_the_script_way_is_measured_on_the_same_cases_and_reported_separately(tmp_path):
+    from neml_brain.evolution.bench import CASES, CadBench
+
+    class Mcp:
+        async def call(self, server, tool, args, timeout):
+            assert tool == "run_script"
+            return {"volume_mm3": 1.0, "bbox": [0, 0, 0, 1, 1, 1]}
+
+    class Llm:
+        async def fill(self, *a, **k):
+            return {"plan": "x", "code": "result = Box(1, 1, 1)  # filler to pass the length check"}
+
+    class Gen:
+        rules: list[str] = []
+        skills = None
+        _llm, _mcp = Llm(), Mcp()
+
+    bench = CadBench(Gen(), tmp_path, tmp_path)
+    await bench._run({"id": "t", "state": "running", "cases": [], "total": len(CASES), "engine": "build123d"}, None, True, None, True)
+    done = __import__("json").loads((tmp_path / "bench_script.json").read_text())
+    assert done["state"] == "done" and len(done["cases"]) == len(CASES) and not (tmp_path / "bench.json").exists()

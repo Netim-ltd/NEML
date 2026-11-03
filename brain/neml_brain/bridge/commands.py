@@ -363,7 +363,7 @@ class CommandRouter:
         if op == "bench":
             if self._bench is None or self._bench.busy():
                 raise Rejected("ölçüm şu an çalışıyor ya da kapalı")
-            return dict(self._bench.start())
+            return dict(self._bench.start_script() if a.get("action") == "script" else self._bench.start())
         if op == "steward":
             if self._steward is None:
                 raise Rejected("veri ajanı kapalı")

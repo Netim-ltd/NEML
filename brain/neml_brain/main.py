@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, cast
@@ -347,7 +348,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         )
 
-    import time
     from pathlib import Path
 
     from neml_brain.evolution.generative import IDEA_SCHEMA, Generator
@@ -396,6 +396,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """The lab tunes how it asks for parts: one proposed recipe rule per round, kept only when the benchmark improves."""
         if not boards.busy():
             await evolver.step()
+        sc = bench._path.with_name("bench_script.json")  # noqa: SLF001
+        stale = not sc.exists() or time.time() - sc.stat().st_mtime > 24 * 3600
+        if stale and not (boards.busy() or generator.busy() or bench.busy() or evolver.busy()):
+            bench.start_script()  # the build123d way, measured on the same cases once a day, to see which way draws better
 
     async def initiative_job() -> None:
         """The lab's own initiative: when idle it asks itself which robot would be useful next, and designs it."""

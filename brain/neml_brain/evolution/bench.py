@@ -178,13 +178,20 @@ class CadBench:
         self._task = asyncio.create_task(self._run(run, None, True))
         return run
 
+    def start_script(self) -> dict[str, Any]:
+        """The same cases built as build123d scripts; the report goes to bench_script.json next to the recipe one, to compare the two ways."""
+        run = {"id": uuid.uuid4().hex[:8], "state": "running", "at": time.time(), "cases": [], "total": len(CASES), "engine": "build123d"}
+        self._task = asyncio.create_task(self._run(run, None, True, None, True))
+        return run
+
     def _write(self, run: dict[str, Any], keep: bool = True) -> None:
         if not keep:
             return
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(run, ensure_ascii=False), encoding="utf-8")
+        path = self._path.with_name("bench_script.json") if run.get("engine") == "build123d" else self._path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(run, ensure_ascii=False), encoding="utf-8")
 
-    async def _run(self, run: dict[str, Any], rules: list[str] | None, keep: bool, only: set[str] | None = None) -> None:
+    async def _run(self, run: dict[str, Any], rules: list[str] | None, keep: bool, only: set[str] | None = None, script: bool = False) -> None:
         out = self._work / f"bench_{run['id']}"
         out.mkdir(parents=True, exist_ok=True)
         gate = asyncio.Semaphore(PARALLEL)  # the model server has this many slots
@@ -194,13 +201,16 @@ class CadBench:
                 started = time.time()
                 lk = {"name": case["id"], "role": case["prompt"], "dims_mm": case["dims"], "material": "PETG", "case": case["id"]}
                 try:
-                    built = await asyncio.wait_for(
-                        self._gen._part(lk, out, lambda _t: None, rules),  # noqa: SLF001 - the same path a design takes
-                        CASE_TIMEOUT_S,
-                    )
+                    if script:
+                        from neml_brain.evolution.scripted import build_script
+
+                        build = build_script(self._gen, lk, out, lambda _t: None, rules)
+                    else:
+                        build = self._gen._part(lk, out, lambda _t: None, rules)  # noqa: SLF001 - the same path a design takes
+                    built = await asyncio.wait_for(build, CASE_TIMEOUT_S)
                     row = {"id": case["id"], **score(case, built)}
                     skills = getattr(self._gen, "skills", None)
-                    if row["passed"] and skills is not None and keep:  # a checked recipe is worth showing for similar parts
+                    if row["passed"] and skills is not None and keep and not script:  # a checked recipe is worth showing for similar parts
                         skills.add(case["id"], case["prompt"], built["recipe"], "bench")
                 except Exception as exc:  # noqa: BLE001 - a case the model cannot do is a result, not a crash
                     row = {"id": case["id"], "passed": False, "error": (str(exc) or type(exc).__name__)[:160]}
