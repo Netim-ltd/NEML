@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from neml_brain.api import deps
 
@@ -23,3 +23,17 @@ async def genome_lineage(
     """Flat rows carrying `parent_id`; the client draws the tree. Sending a
     nested structure would only move the same join into the server."""
     return list(await repo.genome_lineage(root_id=root_id, status=status))
+
+
+@router.get("/{genome_id}/package")
+async def build_package(genome_id: str, repo: deps.Repo) -> dict[str, Any]:
+    """Bill of materials, wiring and assembly steps from the stored plan (no model call)."""
+    from neml_brain.evolution.package import package
+
+    rows = await repo.genome_lineage(root_id=genome_id)
+    row = next((r for r in rows if str(r["id"]) == genome_id), None)
+    mech = ((row or {}).get("body") or {}).get("mechanical") or {}
+    plan = (mech.get("generated") or {}).get("plan")
+    if not plan:
+        raise HTTPException(404, "bu tasarımın kayıtlı planı yok; paket üretilemez")
+    return package(plan)

@@ -163,6 +163,7 @@ def test_no_undeclared_routes(app: Any) -> None:
             ("POST", "/v1/platform/feedback"),
             ("GET", "/v1/platform/feedback-export"),
             ("POST", "/v1/platform/operation/generate"),
+            ("GET", "/v1/genomes/{genome_id}/package"),
         }
     )
     docs = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
