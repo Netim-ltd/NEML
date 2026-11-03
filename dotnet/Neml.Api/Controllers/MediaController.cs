@@ -82,7 +82,7 @@ public sealed class MediaController(IConfiguration configuration) : NemlControll
 [Tags("Learning")]
 public sealed class LearningController(CommandQueue queue, IAuthorizationService authorization) : NemlController
 {
-    /// <summary>One operation: state, decide (id + accepted/rejected), note (domain + text), design (brief) gateway (action list/set/rotate/remove + name + limits; owner only) or cad (tool fit|standard_part|drawing|build_recipe|fem|assemble + args).</summary>
+    /// <summary>One operation: state, decide (id + accepted/rejected), note (domain + text), design (brief), package (model: parts, wiring graph and assembly steps of a design), gateway (action list/set/rotate/remove + name + limits; owner only) or cad (tool fit|standard_part|drawing|build_recipe|fem|assemble + args).</summary>
     [HttpPost]
     [Authorize(Policy = Policies.Operator)]
     [EnableRateLimiting(RateLimits.Commands)]
@@ -101,7 +101,7 @@ public sealed class LearningController(CommandQueue queue, IAuthorizationService
 }
 
 /// <summary>POST /learning</summary>
-public record LearnRequest(string Op, string? Id, string? Decision, string? Domain, string? Kind, string? Text, Dictionary<string, string>? Context, string? Template = null, int? Difficulty = null, int? Seed = null, string? Brief = null, string? Action = null, string? Name = null, int? MaxTokens = null, int? DailyTokens = null, int? Priority = null, string? Tool = null, System.Text.Json.JsonElement? Args = null);
+public record LearnRequest(string Op, string? Id, string? Decision, string? Domain, string? Kind, string? Text, Dictionary<string, string>? Context, string? Template = null, int? Difficulty = null, int? Seed = null, string? Brief = null, string? Action = null, string? Name = null, int? MaxTokens = null, int? DailyTokens = null, int? Priority = null, string? Tool = null, System.Text.Json.JsonElement? Args = null, string? Model = null);
 
 /// <summary>The robot models: the 3D scene (parts, internals, bill of materials) of a genome.</summary>
 [Route("api/v1/models")]

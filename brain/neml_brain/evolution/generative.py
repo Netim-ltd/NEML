@@ -900,6 +900,18 @@ class Generator:
         await runner._publish_scene(draft_id, draft_body)  # noqa: SLF001
         return model, draft_id
 
+    async def package_of(self, model: str) -> dict[str, Any]:
+        """The build package (parts, wiring graph, steps) of a model's newest design that kept its plan."""
+        from neml_brain.evolution.package import package
+
+        async with self._sessions() as session:
+            rows = (await session.execute(sa.text("SELECT body FROM genomes WHERE name = :n ORDER BY version DESC LIMIT 5"), {"n": model})).mappings().all()
+        for row in rows:
+            plan = (row["body"].get("mechanical", {}).get("generated") or {}).get("plan")
+            if plan:
+                return package(plan)
+        raise RuntimeError(f"{model}: kayıtlı planı olan tasarım yok")
+
     async def _activate(self, genome_id: str, model: str) -> None:
         async with self._sessions() as session:
             await session.execute(

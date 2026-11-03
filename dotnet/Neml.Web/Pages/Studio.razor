@@ -1,0 +1,240 @@
+@* Copyright (c) 2026 Mustafa Gulsoy. *@
+@* SPDX-License-Identifier: AGPL-3.0-or-later *@
+@page "/studyo"
+@using System.Text.Json
+@inject ApiClient Api
+
+<PageTitle>Stüdyo — NEML</PageTitle>
+
+<PageHeader Title="Stüdyo" Help="Bir fikir yaz, lab tasarlasın; parçalar, kablolama ve montaj adımları aynı sayfada. Sipariş, baskı ve fiziksel robot her zaman senin onayında." />
+
+@if (message is not null)
+{
+    <p class="@(failed ? "error" : "ok")" role="status">@message</p>
+}
+
+<section class="card">
+    <form @onsubmit="DesignAsync" @onsubmit:preventDefault>
+        <input @bind="brief" placeholder="Ne yapılsın? Örn. 4 tekerlekli, ultrasonik sensörlü küçük bahçe gezgini" style="width:100%" aria-label="Tasarım isteği" />
+        <button class="primary" type="submit" disabled="@busy">Tasarla</button>
+        <button class="ghost" type="button" @onclick="LoadAsync" disabled="@busy">Yenile</button>
+    </form>
+</section>
+
+<div class="grid">
+    <section class="card" aria-label="Projeler">
+        <h2>Projeler</h2>
+        @if (designs.Length == 0)
+        {
+            <p class="muted">Henüz tasarım yok.</p>
+        }
+        @foreach (var d in designs)
+        {
+            var model = ModelOf(d);
+            <article>
+                <button class="@(model is not null && model == selected ? "primary" : "ghost")" disabled="@(model is null)" @onclick="() => SelectAsync(model!)">@Title(d)</button>
+                <span class="state">@d.GetProperty("state").GetString()</span>
+                @if (d.TryGetProperty("error", out var err)) { <small class="error">@err.GetString()</small> }
+            </article>
+        }
+    </section>
+
+    <section class="card" aria-label="Proje">
+        @if (selected is null)
+        {
+            <p class="muted">Soldan bir proje seç.</p>
+        }
+        else if (package is null)
+        {
+            <p class="muted">@(busy ? "Paket hazırlanıyor…" : "Bu tasarımın paketi yok.")</p>
+        }
+        else
+        {
+            var pk = package.Value;
+            <nav class="tabs" role="tablist">
+                @foreach (var (id, label) in Tabs)
+                {
+                    <button role="tab" class="@(tab == id ? "primary" : "ghost")" aria-selected="@(tab == id)" @onclick="() => tab = id">@label</button>
+                }
+            </nav>
+
+            @if (tab == "parts")
+            {
+                var totals = pk.GetProperty("totals");
+                <p class="muted">@totals.GetProperty("bought").GetInt32() satın alınan parça, @totals.GetProperty("printed").GetInt32() baskı parçası, yaklaşık @totals.GetProperty("mass_g").GetDouble().ToString("0") g. Fiyatlar kasıtlı olarak boş: mağaza sayfasında sipariş sırasında okunur.</p>
+                <table>
+                    <thead><tr><th>Parça</th><th>Tür</th><th>Adet</th><th>Kütle</th><th>Ara</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in pk.GetProperty("parts").EnumerateArray())
+                        {
+                            <tr>
+                                <td>@p.GetProperty("name").GetString()</td>
+                                <td>@p.GetProperty("kind").GetString()</td>
+                                <td>@p.GetProperty("qty").GetInt32()</td>
+                                <td>@p.GetProperty("unit_mass_g").GetDouble().ToString("0.#") g</td>
+                                <td>
+                                    @if (p.GetProperty("search").ValueKind == JsonValueKind.String)
+                                    {
+                                        <a class="link" target="_blank" rel="noopener noreferrer" href="@("https://www.google.com/search?q=" + Uri.EscapeDataString(p.GetProperty("search").GetString()!))">ara</a>
+                                    }
+                                    @if (!p.GetProperty("verified").GetBoolean()) { <small class="muted"> değerler doğrulanmadı</small> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else if (tab == "wiring")
+            {
+                var (nodes, edges, w, h) = Layout(pk.GetProperty("wiring"));
+                <svg viewBox="0 0 @w @h" role="img" aria-label="Kablolama şeması" style="width:100%;max-width:900px">
+                    @foreach (var e in edges)
+                    {
+                        <line x1="@e.X1" y1="@e.Y1" x2="@e.X2" y2="@e.Y2" stroke="@(e.Power ? "#d97706" : "#16a34a")" stroke-width="2" stroke-dasharray="@(e.Power ? "6 3" : "0")" />
+                    }
+                    @foreach (var n in nodes)
+                    {
+                        <rect x="@(n.X - 60)" y="@(n.Y - 18)" width="120" height="36" rx="6" fill="#1f2937" stroke="#475569" />
+                        @Label(n)
+                    }
+                </svg>
+                <p class="muted"><span style="color:#d97706">- - -</span> güç · <span style="color:#16a34a">———</span> veri · @string.Join(" ", pk.GetProperty("wiring").GetProperty("nets").EnumerateArray().Select(x => x.GetString()))</p>
+            }
+            else if (tab == "steps")
+            {
+                @foreach (var phase in Phases)
+                {
+                    var rows = pk.GetProperty("steps").EnumerateArray().Where(s => s.GetProperty("phase").GetString() == phase.Key).ToArray();
+                    if (rows.Length == 0) { continue; }
+                    <h3>@phase.Value</h3>
+                    <ol>
+                        @foreach (var s in rows) { <li>@s.GetProperty("text").GetString()</li> }
+                    </ol>
+                }
+            }
+            else
+            {
+                <p class="muted">Simülasyon, yargıç sonuçları ve 3B görünüm için <a class="link" href="@($"evrim/{selected}")">model sayfasını</a> aç.</p>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private static readonly (string, string)[] Tabs = [("info", "Bilgi"), ("parts", "Parçalar"), ("wiring", "Kablolama"), ("steps", "Montaj")];
+    private static readonly Dictionary<string, string> Phases = new() { ["baski"] = "Baskı", ["montaj"] = "Montaj", ["kablolama"] = "Kablolama", ["test"] = "Test" };
+    private static readonly string[] Rank = ["battery", "switch", "regulator", "board", "driver", "dc_motor", "servo", "sensor"];
+
+    private JsonElement[] designs = [];
+    private JsonElement? package;
+    private string? selected, message;
+    private string tab = "parts", brief = "";
+    private bool busy, failed;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private static string? ModelOf(JsonElement d) =>
+        d.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.Object && r.TryGetProperty("model", out var m) ? m.GetString() : null;
+
+    private static string Title(JsonElement d)
+    {
+        var b = d.GetProperty("brief").GetString() ?? "";
+        return b.Length > 48 ? b[..48] + "…" : b;
+    }
+
+    private async Task<JsonElement?> RunAsync(object body, int tries = 60)
+    {
+        busy = true;
+        failed = false;
+        try
+        {
+            var accepted = await Api.LearnOpAsync(body);
+            for (var i = 0; i < tries; i++)
+            {
+                await Task.Delay(1000);
+                var status = await Api.GetCommandAsync(accepted!.CommandId);
+                if (status is null || status.State is "pending" or "delivered") { continue; }
+                if (status.State == "applied" && status.Result is { ValueKind: JsonValueKind.Object } r) { return r; }
+                message = status.Result is { ValueKind: JsonValueKind.Object } e && e.TryGetProperty("error", out var err) ? err.GetString() : "Olmadı.";
+                failed = true;
+                return null;
+            }
+
+            message = "Lab cevap vermedi.";
+            failed = true;
+        }
+        catch (HttpRequestException)
+        {
+            message = "İstek gönderilemedi.";
+            failed = true;
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        return null;
+    }
+
+    private async Task LoadAsync()
+    {
+        if (await RunAsync(new { op = "state" }) is { } r && r.TryGetProperty("designs", out var ds) && ds.ValueKind == JsonValueKind.Array)
+        {
+            designs = ds.EnumerateArray().Reverse().Select(d => d.Clone()).ToArray();
+        }
+    }
+
+    private async Task DesignAsync()
+    {
+        if (string.IsNullOrWhiteSpace(brief)) { return; }
+        if (await RunAsync(new { op = "design", brief }) is not null)
+        {
+            message = "Tasarım başladı; dakikalar sürebilir. Yenile ile ilerlemeyi gör.";
+            brief = "";
+            await LoadAsync();
+        }
+    }
+
+    private async Task SelectAsync(string model)
+    {
+        selected = model;
+        package = null;
+        tab = "parts";
+        message = null;
+        if (await RunAsync(new { op = "package", model }) is { } r) { package = r.Clone(); }
+    }
+
+    private static MarkupString Label(Node n)
+    {
+        static string e(string? t) => System.Net.WebUtility.HtmlEncode(t ?? "");
+        return new MarkupString($"<text x='{n.X}' y='{n.Y - 2}' text-anchor='middle' fill='#e5e7eb' font-size='11'>{e(n.Label)}</text><text x='{n.X}' y='{n.Y + 11}' text-anchor='middle' fill='#94a3b8' font-size='9'>{e(n.Kind)}</text>");
+    }
+
+    private sealed record Node(string Id, string Label, string Kind, int X, int Y);
+
+    private sealed record Edge(double X1, double Y1, double X2, double Y2, bool Power);
+
+    /// <summary>Columns by kind (battery to sensors), rows by order inside a kind.</summary>
+    private static (List<Node>, List<Edge>, int, int) Layout(JsonElement wiring)
+    {
+        var nodes = new List<Node>();
+        var perColumn = new Dictionary<int, int>();
+        foreach (var n in wiring.GetProperty("nodes").EnumerateArray())
+        {
+            var kind = n.GetProperty("kind").GetString() ?? "";
+            var col = Math.Max(0, Array.IndexOf(Rank, kind));
+            var row = perColumn.GetValueOrDefault(col);
+            perColumn[col] = row + 1;
+            var name = n.GetProperty("name").GetString() ?? "";
+            nodes.Add(new Node(n.GetProperty("id").GetString()!, name.Length > 20 ? name[..20] : name, kind, 70 + col * 125, 40 + row * 56));
+        }
+
+        var at = nodes.ToDictionary(n => n.Id);
+        var edges = wiring.GetProperty("edges").EnumerateArray()
+            .Where(e => at.ContainsKey(e.GetProperty("from").GetString()!) && at.ContainsKey(e.GetProperty("to").GetString()!))
+            .Select(e => (a: at[e.GetProperty("from").GetString()!], b: at[e.GetProperty("to").GetString()!], p: e.GetProperty("type").GetString() == "power"))
+            .Select(t => new Edge(t.a.X + 60, t.a.Y, t.b.X - 60, t.b.Y, t.p))
+            .ToList();
+        return (nodes, edges, 70 + Rank.Length * 125, 40 + Math.Max(1, perColumn.Values.DefaultIfEmpty(1).Max()) * 56);
+    }
+}

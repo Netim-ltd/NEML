@@ -390,6 +390,13 @@ class CommandRouter:
             if self._generator is None or self._generator.busy():
                 raise Rejected("tasarım şu an yapılamıyor (meşgul ya da kapalı)")
             return dict(self._generator.start(str(a.get("brief") or "")[:900], CLOUD_ACTOR))
+        if op == "package":
+            if self._generator is None:
+                raise Rejected("tasarım motoru kapalı")
+            try:
+                return await self._generator.package_of(str(a.get("model") or ""))
+            except RuntimeError as exc:
+                raise Rejected(str(exc)) from exc
         if op == "decide":
             lesson = store.decide(str(a.get("id")), str(a.get("decision")))
             if lesson is None:
@@ -413,7 +420,7 @@ class CommandRouter:
                     int(a.get("seed") or 0),
                 )
             )
-        raise Rejected("op must be state, decide, note or world")
+        raise Rejected("op must be state, design, package, decide, note or world")
 
     async def _pose_op(self, a: dict[str, Any]) -> dict[str, Any]:
         model, op, name = a.get("model"), a.get("op"), a.get("name")
