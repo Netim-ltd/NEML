@@ -35,7 +35,12 @@ SCRIPT_PROMPT = (
     "Örnek 2 (flanşlı silindir, yuvarlatılmış):\n"
     "with BuildPart() as p:\n    Cylinder(radius=10, height=30)\n    with Locations((0, 0, -15 + 2.5)):\n        Cylinder(radius=18, height=5)\n    Hole(radius=5)\n"
     "result = fillet(p.part.edges().filter_by(GeomType.CIRCLE).sort_by(Axis.Z)[-1], 1)\n"
-    "Örnek 3 (L braket): iki kutuyu topla: `a = Box(40, 20, 4); b = Pos(18, 0, 12) * Box(4, 20, 28); result = a + b`.{rules}{error}"
+    "Örnek 3 (L braket): iki kutuyu topla: `a = Box(40, 20, 4); b = Pos(18, 0, 12) * Box(4, 20, 28); result = a + b`.\n"
+    "API notları (sık hatalar): sin, cos, pi, sqrt hazır (math.'sız yazılır). `cut`, `fuse`, `union` diye fonksiyon YOK: çıkarmak için `a - b`, birleştirmek için `a + b` "
+    "ya da BuildPart içinde `Cylinder(..., mode=Mode.SUBTRACT)`. Konumlamak için `Pos(x, y, z) * şekil`, döndürmek için `Rot(0, 0, açı_derece) * şekil` "
+    "(Rot bir `with` bloğu değildir; blok için `with Locations(Pos(..) * Rot(..)):`). Köşe yuvarlama: `fillet(parça.edges().filter_by(...), radius=r)` "
+    "(ilk argüman kenar listesi; r en fazla en ince duvarın yarısı, emin değilsen 0.8). Kabuk/içi boş kutu: `Box(w, d, h) - Pos(0, 0, t) * Box(w - 2*t, d - 2*t, h)`. "
+    "Hacim hedefe yakın olsun: gereksiz boşluk ya da dolgu ekleme.{rules}{error}"
 )
 
 

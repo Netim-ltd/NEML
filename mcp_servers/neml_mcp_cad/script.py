@@ -37,7 +37,7 @@ import json, sys
 from build123d import *
 req = json.load(open(sys.argv[1]))
 ns = {"__name__": "part"}
-exec("from build123d import *\nimport math", ns)
+exec("import math\nfrom math import *\nfrom build123d import *", ns)
 exec(compile(open(req["script"]).read(), "part.py", "exec"), ns)
 r = ns.get("result")
 r = getattr(r, "part", r)

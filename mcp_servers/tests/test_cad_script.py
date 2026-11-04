@@ -45,3 +45,9 @@ async def test_a_script_builds_a_part_with_measurements(tmp_path):
 async def test_a_runaway_script_is_killed(tmp_path):
     with pytest.raises(ScriptError, match="bitmedi"):
         await run_script("while True:\n    pass\nresult = 1\n", str(tmp_path), "dongu", timeout_s=3)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("build123d") is None, reason="build123d is installed in the CAD image only")
+async def test_math_names_are_ready_without_a_prefix(tmp_path):
+    out = await run_script("result = Pos(30 * cos(pi / 2), 30 * sin(pi / 2), 0) * Box(10, 10, 10)\n", str(tmp_path), "yay")
+    assert out["bbox"][4] == pytest.approx(35)
