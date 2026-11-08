@@ -290,6 +290,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """Lessons are decided by the lab itself (rules + a second opinion from the model); nothing waits for the owner."""
         from neml_brain.learning import autopilot
 
+        ask = learn_store.root / "design_now.txt"  # ponytail: a drop file to start one design without the app (ops/debug)
+        if ask.exists() and not generator.busy():
+            brief = ask.read_text(encoding="utf-8").strip()
+            ask.unlink()
+            if brief:
+                generator.start(brief, "ops")
         if generator.busy():
             return
         got = await autopilot.decide(learn_store, state.llm.provider)
