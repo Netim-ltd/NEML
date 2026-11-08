@@ -333,3 +333,18 @@ def test_repair_layout_draws_a_floating_link_in():
     plan["links"][1]["joint"]["z"] = float(plan["links"][1]["joint"]["z"]) + 200
     assert any("değmiyor" in i for i in layout_issues(plan))
     assert not any("değmiyor" in i for i in layout_issues(repair_layout(plan)))
+
+
+async def test_start_with_a_ready_plan_keeps_it_as_the_checkpoint(tmp_path):
+    import pytest
+
+    from neml_brain.evolution.generative import Generator
+
+    gen = Generator.__new__(Generator)
+    gen._save = lambda job: None  # noqa: SLF001
+    gen._run = lambda job, auto: __import__("asyncio").sleep(0)  # noqa: SLF001
+    gen._running = set()  # noqa: SLF001
+    job = gen.start("x", "ops", plan=PLAN)
+    assert job["ckpt"]["plan"] is PLAN and job["ckpt"]["built"] == {}
+    with pytest.raises(ValueError):
+        gen.start("x", "ops", plan={"links": []})

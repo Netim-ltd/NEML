@@ -10,6 +10,7 @@ Run:  uvicorn neml_brain.main:app --host 0.0.0.0 --port 8080
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from collections.abc import AsyncIterator
@@ -291,7 +292,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from neml_brain.learning import autopilot
 
         ask = learn_store.root / "design_now.txt"  # ponytail: a drop file to start one design without the app (ops/debug)
-        if ask.exists() and not generator.busy():
+        ready = learn_store.root / "design_now.json"  # {"brief": ..., "plan": {...}}: a plan written elsewhere, built and judged here
+        if ready.exists() and not generator.busy():
+            req = json.loads(ready.read_text(encoding="utf-8"))
+            ready.unlink()
+            generator.start(str(req["brief"]), "ops", plan=req["plan"])
+        elif ask.exists() and not generator.busy():
             brief = ask.read_text(encoding="utf-8").strip()
             ask.unlink()
             if brief:

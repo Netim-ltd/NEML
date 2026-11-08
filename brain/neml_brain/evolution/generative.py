@@ -472,8 +472,11 @@ class Generator:
             j["state"] == "running" and time.time() - j["at"] < 4 * 3600 for j in self.jobs()
         )
 
-    def start(self, brief: str, actor: str, auto_activate: bool = True) -> dict[str, Any]:
-        """Begin a design in the background (it takes many minutes on this CPU); progress is kept in the job."""
+    def start(self, brief: str, actor: str, auto_activate: bool = True, plan: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Begin a design in the background (it takes many minutes on this CPU); progress is kept in the job.
+        A ready-made `plan` (checked here) skips the planning and goes straight to building its parts and the gates."""
+        if plan is not None and (bad := check_plan(plan)):
+            raise ValueError("plan geçersiz: " + "; ".join(bad))
         job = {
             "id": uuid.uuid4().hex[:8],
             "brief": brief[:400],
@@ -482,7 +485,7 @@ class Generator:
             "steps": ["başladı"],
             "at": time.time(),
             "auto_activate": auto_activate,
-            "ckpt": {},
+            "ckpt": {} if plan is None else {"plan": plan, "out": uuid.uuid4().hex[:8], "built": {}},
         }
         self._save(job)
         task = asyncio.create_task(self._run(job, auto_activate))
