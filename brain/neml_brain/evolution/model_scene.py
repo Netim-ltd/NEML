@@ -239,6 +239,7 @@ def load_catalog() -> dict[str, Any]:
 def generated_rows(body: Mapping[str, Any]) -> list[dict[str, Any]]:
     """BOM rows of a robot the lab designed: what to print (material, estimated mass) and what to buy."""
     plan = (body["mechanical"].get("generated") or {}).get("plan") or []
+    plan = plan.get("links", []) if isinstance(plan, dict) else plan  # the stored plan is the whole plan dict; older ones were the link list
     density = {"PETG": 1.27, "PA6-CF": 1.17, "PLA": 1.24, "ASA": 1.07}
     designs = {
         e["name"]: e.get("design", {})

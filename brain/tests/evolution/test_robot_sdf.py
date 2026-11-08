@@ -83,3 +83,17 @@ def test_wheels_stacked_on_the_centre_line_are_spread_to_both_sides():
 
 def test_wheels_already_on_both_sides_are_left_alone():
     assert [lk["joint"]["y"] for lk in _wheels(equip(PLAN))] == [lk["joint"]["y"] for lk in _wheels(PLAN)]
+
+
+@pytest.mark.parametrize("shift", [90, -400])
+def test_equip_lowers_or_raises_wheels_until_the_body_clears_the_ground(shift):
+    plan = deepcopy(PLAN)
+    for lk in plan["links"]:
+        if lk["joint"]["type"] == "revolute" and "wheel" in lk["name"].lower() + lk.get("role", "").lower():
+            lk["joint"]["z"] = float(lk["joint"]["z"]) + shift
+    try:
+        sdf_of(plan)
+        pytest.skip("this shift does not break the plan")
+    except NotDrivable:
+        pass
+    sdf_of(equip(plan))

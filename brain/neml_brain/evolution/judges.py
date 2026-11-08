@@ -203,6 +203,62 @@ def pair_wheels(plan: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def ground(plan: dict[str, Any]) -> dict[str, Any]:
+    """A wheeled body that drags on the floor (or floats far above it) gets its wheels moved down (or up) until it clears the ground by
+    a finger's width. Pure arithmetic on one number, so it is mended here instead of sent back to the model.
+    # ponytail: moves every wheel joint's z alike, two passes; a body whose wheels hang off different parents is still judged by sdf_of."""
+    from copy import deepcopy
+
+    from neml_brain.evolution.robot_sdf import NotDrivable, _is_wheel, sdf_of
+
+    out = deepcopy(plan)
+    for _ in range(2):
+        try:
+            sdf_of(out)
+            return out
+        except NotDrivable as exc:
+            if exc.clearance is None:
+                return out
+            want = 0.012 if exc.clearance < 0 else 0.05  # m of clearance to land on
+            for lk in out["links"]:
+                if _is_wheel(lk):
+                    lk["joint"]["z"] = round(float(lk["joint"]["z"]) - (want - exc.clearance) * 1000, 2)
+    return out
+
+
+KIND_WORDS = (
+    ("wheel", ("tekerlek", "wheel", "teker")),
+    ("servo", ("servo",)),
+    ("dc_motor", ("motor",)),
+    ("battery", ("batarya", "pil", "battery", "lipo", "li-ion")),
+    ("driver", ("sürücü", "surucu", "driver")),
+    ("regulator", ("regülatör", "regulator", "buck", "düşürücü")),
+    ("switch", ("şalter", "salter", "switch", "düğme", "acil")),
+    ("sensor", ("sensör", "sensor", "ultrason", "imu", "mesafe")),
+    ("board", ("kontrolcü", "işlemci", "esp32", "arduino", "board", "raspberry", "mikrodenetleyici")),
+)
+
+
+def fit_parts(plan: dict[str, Any]) -> dict[str, Any]:
+    """A bought link whose `part` is blank or not in the catalog gets the catalog part of the kind its name/role says, the one closest in
+    mass. The model describes the part well and fills the id badly; the owner still reads the bill of materials.
+    # ponytail: keyword guess on name and role; a part that matches no kind stays as the judge found it."""
+    from copy import deepcopy
+
+    from neml_brain.evolution.catalog import CATALOG, OTHER
+
+    out = deepcopy(plan)
+    for lk in out["links"]:
+        if lk["source"] != "bought" or lk.get("part") in CATALOG or lk.get("part") == OTHER:
+            continue
+        text = f"{lk['name']} {lk.get('role', '')}".lower()
+        kind = next((k for k, words in KIND_WORDS if any(w in text for w in words)), None)
+        fits = [p for p in CATALOG.values() if p["kind"] == kind]
+        if fits:
+            lk["part"] = min(fits, key=lambda p: abs(p["mass_g"] - float(lk.get("mass_g", 0))))["id"]
+    return out
+
+
 def equip(plan: dict[str, Any]) -> dict[str, Any]:
     """Complete a moving robot from the catalog: the controller, battery and stop switch it lacks, and for every driven joint without
     an actuator the lightest catalog motor/servo that carries the load with the safety factor. The model keeps designing the body;
@@ -210,7 +266,7 @@ def equip(plan: dict[str, Any]) -> dict[str, Any]:
     # ponytail: first-fit by weight, no voltage or current budget; the owner still checks the bill of materials."""
     from neml_brain.evolution.catalog import CATALOG
 
-    out = pair_wheels(plan)
+    out = ground(pair_wheels(fit_parts(plan)))
     for lk in out["links"]:  # a slender printed bar thinner than MIN_SECTION fails the beam check whatever the recipe says
         d = [float(v) for v in lk["dims_mm"]]
         if lk["source"] == "designed" and max(d) >= 4 * min(d):

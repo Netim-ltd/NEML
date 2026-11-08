@@ -201,3 +201,19 @@ def test_tidy_survives_a_step_that_outputs_its_own_input():
     from neml_brain.evolution.judges import tidy
 
     assert tidy(loop)["result"] == "a"  # used to spin for ever and freeze the whole brain
+
+
+def test_equip_fills_a_blank_catalog_part_from_the_name():
+    from copy import deepcopy
+
+    from neml_brain.evolution.judges import equip
+
+    from .test_generative import PLAN
+
+    plan = deepcopy(PLAN)
+    bought = [lk for lk in plan["links"] if lk["source"] == "bought"]
+    assert bought, "the shared plan has a bought link"
+    old = bought[0]["part"]
+    bought[0]["part"] = ""
+    fixed = {lk["name"]: lk for lk in equip(plan)["links"]}
+    assert fixed[bought[0]["name"]]["part"] != "" or old == ""

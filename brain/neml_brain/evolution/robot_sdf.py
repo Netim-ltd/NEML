@@ -23,7 +23,11 @@ CASTER_MU = 0.0
 
 
 class NotDrivable(ValueError):
-    """Why this robot cannot be run as a wheeled vehicle."""
+    """Why this robot cannot be run as a wheeled vehicle. `clearance` (m, body bottom minus wheel bottoms) is set when only the body height is wrong."""
+
+    def __init__(self, message: str, clearance: float | None = None) -> None:
+        super().__init__(message)
+        self.clearance = clearance
 
 
 def _is_wheel(lk: dict[str, Any]) -> bool:
@@ -89,11 +93,12 @@ def sdf_of(plan: dict[str, Any], camera: bool = False) -> tuple[str, dict[str, A
         d = -clearance * 1000
         raise NotDrivable(
             f"gövde tekerlek tabanından {d:.0f} mm aşağıda: zemine sürtünür; çözüm: gövde linklerinin z konumunu {d + 5:.0f} mm artır "
-            f"(ya da tekerlek çapını {2 * (d + 5):.0f} mm büyüt, tekerlek merkezi aynı kalsın)"
+            f"(ya da tekerlek çapını {2 * (d + 5):.0f} mm büyüt, tekerlek merkezi aynı kalsın)",
+            clearance,
         )
     if clearance > 0.25:
         d = clearance * 1000
-        raise NotDrivable(f"gövde zeminden {d:.0f} mm yukarıda: devrilir; çözüm: gövde linklerinin z konumunu {d - 200:.0f} mm azalt ya da tekerlek çapını {2 * (d - 200):.0f} mm büyüt")
+        raise NotDrivable(f"gövde zeminden {d:.0f} mm yukarıda: devrilir; çözüm: gövde linklerinin z konumunu {d - 200:.0f} mm azalt ya da tekerlek çapını {2 * (d - 200):.0f} mm büyüt", clearance)
 
     def pose(x: float, y: float, z: float, r: float = 0.0, p: float = 0.0, w: float = 0.0) -> str:
         return f"<pose>{x:.5f} {y:.5f} {z - z0:.5f} {r:.5f} {p:.5f} {w:.5f}</pose>"

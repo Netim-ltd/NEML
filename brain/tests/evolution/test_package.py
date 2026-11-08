@@ -20,3 +20,11 @@ def test_a_designed_robot_gets_a_bill_of_materials_a_wiring_graph_and_ordered_st
     phases = [s["phase"] for s in pk["steps"]]
     assert phases.index("baski") < phases.index("montaj") < phases.index("kablolama") < phases.index("test")
     assert pk["totals"]["price"] is None and pk["totals"]["mass_g"] > 0
+
+
+def test_generated_rows_read_the_whole_stored_plan():
+    from neml_brain.evolution.model_scene import generated_rows
+
+    plan = {"links": [{"name": "govde", "source": "designed", "material": "PETG", "dims_mm": [100, 80, 30], "role": "gövde"}]}
+    rows = generated_rows({"mechanical": {"generated": {"plan": plan}, "imports": []}})
+    assert [r["part"] for r in rows] == ["govde: gövde"]
