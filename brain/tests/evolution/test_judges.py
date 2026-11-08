@@ -217,3 +217,19 @@ def test_equip_fills_a_blank_catalog_part_from_the_name():
     bought[0]["part"] = ""
     fixed = {lk["name"]: lk for lk in equip(plan)["links"]}
     assert fixed[bought[0]["name"]]["part"] != "" or old == ""
+
+
+def test_equip_stands_a_turntable_wheel_up():
+    from copy import deepcopy
+
+    from neml_brain.evolution.judges import equip
+
+    from .test_generative import PLAN
+
+    plan = deepcopy(PLAN)
+    for lk in plan["links"]:
+        if lk["joint"]["type"] == "revolute" and "wheel" in (lk["name"] + lk.get("role", "")).lower():
+            lk["joint"]["axis"] = "z"
+            lk["dims_mm"] = [65, 65, 26]
+    wheels = [lk for lk in equip(plan)["links"] if lk["joint"]["type"] == "revolute" and "wheel" in (lk["name"] + lk.get("role", "")).lower()]
+    assert wheels and all(w["joint"]["axis"] == "y" and w["dims_mm"][1] == 26 for w in wheels)

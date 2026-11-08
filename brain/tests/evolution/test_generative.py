@@ -322,3 +322,14 @@ def test_the_plan_is_told_where_the_lab_robots_keep_losing(tmp_path):
     assert "warehouse" not in hint  # it passes there
     (tmp_path / "sweeps.json").write_text(json.dumps({**rec, "runs": 5}), encoding="utf-8")
     assert sim_hint(tmp_path) == ""  # a few runs are noise
+
+
+def test_repair_layout_draws_a_floating_link_in():
+    from copy import deepcopy
+
+    from neml_brain.evolution.generative import layout_issues, repair_layout
+
+    plan = deepcopy(PLAN)
+    plan["links"][1]["joint"]["z"] = float(plan["links"][1]["joint"]["z"]) + 200
+    assert any("değmiyor" in i for i in layout_issues(plan))
+    assert not any("değmiyor" in i for i in layout_issues(repair_layout(plan)))

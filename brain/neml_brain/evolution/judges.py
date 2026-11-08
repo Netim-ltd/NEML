@@ -167,6 +167,27 @@ def tidy(recipe: dict[str, Any]) -> dict[str, Any]:
     return {**recipe, "solids": [s for s in solids if s.get("id") in needed] or solids, "steps": kept_steps, "result": result}
 
 
+def upright_wheels(plan: dict[str, Any]) -> dict[str, Any]:
+    """A wheel the model turned about the vertical axis spins like a turntable and cannot drive. A wheel is a disc: its thinnest side is
+    its width, and that side is the axle. A flat disc lying down (thinnest side up) is stood up on its edge, width along y.
+    # ponytail: only vertical axes are mended; a plan mixing x and y axles is still judged by sdf_of."""
+    from copy import deepcopy
+
+    from neml_brain.evolution.robot_sdf import _is_wheel
+
+    out = deepcopy(plan)
+    for lk in out["links"]:
+        if not _is_wheel(lk) or lk["joint"].get("axis") != "z":
+            continue
+        d = [float(v) for v in lk["dims_mm"]]
+        i = d.index(min(d))
+        if i == 2:
+            d = [d[0], d[2], d[1]]
+        lk["dims_mm"] = d
+        lk["joint"]["axis"] = "x" if i == 0 else "y"
+    return out
+
+
 def pair_wheels(plan: dict[str, Any]) -> dict[str, Any]:
     """A wheeled plan whose wheels all sit on one side of the body (or stacked on the axle line) gets its missing pair: the wheels are
     mirrored across the body centre line, or spread to both sides of the body when they share the centre line. Pure geometry the
@@ -266,7 +287,7 @@ def equip(plan: dict[str, Any]) -> dict[str, Any]:
     # ponytail: first-fit by weight, no voltage or current budget; the owner still checks the bill of materials."""
     from neml_brain.evolution.catalog import CATALOG
 
-    out = ground(pair_wheels(fit_parts(plan)))
+    out = ground(pair_wheels(upright_wheels(fit_parts(plan))))
     for lk in out["links"]:  # a slender printed bar thinner than MIN_SECTION fails the beam check whatever the recipe says
         d = [float(v) for v in lk["dims_mm"]]
         if lk["source"] == "designed" and max(d) >= 4 * min(d):

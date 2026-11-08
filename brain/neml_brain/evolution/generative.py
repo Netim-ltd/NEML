@@ -39,6 +39,7 @@ from neml_brain.evolution.catalog import apply as use_catalog
 from neml_brain.evolution.catalog import listing as catalog_text
 from neml_brain.evolution.judges import (
     equip,
+    ground,
     recipe_issues,
     robot_issues,
     softer_rounds,
@@ -300,6 +301,17 @@ def repair_layout(plan: dict[str, Any]) -> dict[str, Any]:
     before it is moved to a face of its parent (the direction it already pointed in first, then the other five) until nothing
     overlaps. The joint offsets are rewritten; everything else in the plan is left alone."""
     out = deepcopy(plan)
+    for lk in out["links"]:  # a link that floats off its parent is drawn in until the boxes touch (parents first, the layout re-read each time)
+        centre, size, parent = layout(out)
+        name = slug(str(lk["name"]))
+        up = parent[name]
+        if not up:
+            continue
+        gaps = [max(abs(centre[name][k] - centre[up][k]) - (size[name][k] + size[up][k]) / 2, 0.0) for k in range(3)]
+        if max(gaps) > 15:
+            for k, key in enumerate("xyz"):
+                if gaps[k] > 0:
+                    lk["joint"][key] = round(float(lk["joint"][key]) - math.copysign(gaps[k], centre[name][k] - centre[up][k]), 1)
     centre, size, parent = layout(out)
     placed: list[str] = []
     for lk in out["links"]:
@@ -563,6 +575,10 @@ class Generator:
             layout = [*layout_issues(plan), *robot_issues(plan), *WorldModel().warn(plan)]
             if not layout:
                 return dict(plan)
+            mended = ground(repair_layout(plan))  # arithmetic the solver does in a blink; the model is asked again only when it cannot
+            if not [*layout_issues(mended), *robot_issues(mended), *WorldModel().warn(mended)]:
+                progress(f"yerleşim çözücü {len(layout)} sorunu kendisi düzeltti")
+                return dict(mended)
             progress(f"yerleşim eleştirisi: {len(layout)} sorun")
             if self.on_findings is not None:
                 self.on_findings(layout)
@@ -575,7 +591,7 @@ class Generator:
                 "Eklem konumlarını (parent çerçevesinde, mm) düzelt: parçalar birbirinin içine girmesin ama bağlı olduğu parçaya değsin."
             )
         if best is not None:  # still imperfect after the revisions: the layout solver moves the links apart
-            fixed = repair_layout(best)
+            fixed = ground(repair_layout(best))
             before, after = len(layout_issues(best)), len(layout_issues(fixed))
             progress(f"yerleşim çözücü: {before} sorun -> {after}")
             self._learn.note("cad", "layout", f"plan yerleşimi modelde düzelmedi ({brief[:60]}); çözücü {before}->{after}")
