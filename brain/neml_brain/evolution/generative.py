@@ -49,13 +49,14 @@ from neml_brain.evolution.judges import (
 )
 from neml_brain.evolution.urdf_assembly import UrdfError, assemble
 from neml_brain.evolution.world_model import WorldModel
+from neml_brain.learning.questions import Questions
 from neml_brain.llm.provider import SchemaViolation
 from neml_brain.llm.schemas import MECH_PARAM_SCHEMA as RECIPE_SCHEMA
 
 log = structlog.get_logger(__name__)
 
 MAX_LINKS = 24
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5  # the layout solver and the gates answer in milliseconds; only a model turn costs minutes, and a fifth try is cheap next to a lost design
 DENSITY = {"PETG": 1.27, "PA6-CF": 1.17, "PLA": 1.24, "ASA": 1.07}  # g/cm3
 NUM = {"type": "number"}
 
@@ -533,6 +534,7 @@ class Generator:
                 self._step(job, f"hata ({type(exc).__name__}), kaldığı yerden bir kez daha deneniyor")
                 return await self._run(job, auto_activate)
             job.update(state="failed", error=(str(exc) or type(exc).__name__)[:300])
+            Questions(self._learn.root).ask(f"'{job['brief'][:80]}' tasarlanamadı: {str(exc)[:160]}. Gereksinimi değiştirmeli miyim?", "tasarım başarısız")
             self._learn.note(
                 "cad",
                 "generative_failed",
@@ -560,7 +562,7 @@ class Generator:
             progress(f"plan {attempt + 1}")
             try:
                 raw = await self._llm.fill(
-                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + sim_hint(self._learn.root) + problem,
+                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + sim_hint(self._learn.root) + Questions(self._learn.root).rules() + Questions(self._learn.root).example(brief) + problem,
                     PLAN_SCHEMA,
                     profile="param_skill",
                     max_tokens=4000,
@@ -810,6 +812,10 @@ class Generator:
                 "taslak olarak bırakıldı: "
                 + ("; ".join(problems) or "otomatik devreye alma kapalı")
             )
+        if not problems:
+            Questions(self._learn.root).keep(brief, plan)  # a plan that passed every gate is the next similar request's example
+        else:
+            Questions(self._learn.root).ask(f"'{plan['name']}' taslak kaldı: {'; '.join(problems[:2])[:200]}. Ne yapmalı?", "tasarım kapıları geçilemedi")
         if not problems and self.skills is not None:  # a design that passed the gate: its parts are worth showing again
             for lk in plan["links"]:
                 info = built.get(slug(str(lk["name"])), {})

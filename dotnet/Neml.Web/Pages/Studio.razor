@@ -21,6 +21,23 @@
     </form>
 </section>
 
+@if (questions.Length > 0)
+{
+    <section class="card" aria-label="Labın soruları">
+        <h2>Lab sana soruyor</h2>
+        <p class="muted">Tasarım beklemeden devam eder; cevabın sonraki tüm planlara kural olarak girer.</p>
+        @foreach (var q in questions)
+        {
+            var id = q.GetProperty("id").GetString()!;
+            <article>
+                <strong>@q.GetProperty("text").GetString()</strong>
+                <input @bind="answers[id]" placeholder="Cevabın" style="width:100%" aria-label="Cevap" />
+                <button class="primary" type="button" disabled="@busy" @onclick="() => AnswerAsync(id)">Cevapla</button>
+            </article>
+        }
+    </section>
+}
+
 <div class="grid">
     <section class="card" aria-label="Projeler">
         <h2>Projeler</h2>
@@ -125,7 +142,8 @@
     private static readonly Dictionary<string, string> Phases = new() { ["baski"] = "Baskı", ["montaj"] = "Montaj", ["kablolama"] = "Kablolama", ["test"] = "Test" };
     private static readonly string[] Rank = ["battery", "switch", "regulator", "board", "driver", "dc_motor", "servo", "sensor"];
 
-    private JsonElement[] designs = [];
+    private JsonElement[] designs = [], questions = [];
+    private readonly Dictionary<string, string> answers = new();
     private JsonElement? package;
     private string? selected, message;
     private string tab = "parts", brief = "";
@@ -182,6 +200,18 @@
         {
             designs = ds.EnumerateArray().Reverse().Select(d => d.Clone()).ToArray();
         }
+
+        if (await RunAsync(new { op = "questions" }) is { } q && q.TryGetProperty("questions", out var qs) && qs.ValueKind == JsonValueKind.Array)
+        {
+            questions = qs.EnumerateArray().Where(x => x.GetProperty("answer").ValueKind == JsonValueKind.Null).Select(x => x.Clone()).ToArray();
+            foreach (var x in questions) { answers.TryAdd(x.GetProperty("id").GetString()!, ""); }
+        }
+    }
+
+    private async Task AnswerAsync(string id)
+    {
+        if (string.IsNullOrWhiteSpace(answers.GetValueOrDefault(id))) { return; }
+        if (await RunAsync(new { op = "answer", id, text = answers[id] }) is not null) { await LoadAsync(); }
     }
 
     private async Task DesignAsync()

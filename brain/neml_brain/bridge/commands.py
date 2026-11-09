@@ -32,6 +32,7 @@ from neml_brain.evolution.imports import ImportRejected
 from neml_brain.evolution.model_edit import Rejected as ModelRejected
 from neml_brain.evolution.poses import PoseRejected
 from neml_brain.evolution.skills import SkillLibrary
+from neml_brain.learning.questions import Questions
 from neml_brain.settings import catalog
 
 log = structlog.get_logger(__name__)
@@ -319,6 +320,12 @@ class CommandRouter:
             raise Rejected("the lab has no learning store")
         store = self._learning
         op = a.get("op")
+        if op == "questions":
+            return {"questions": Questions(store.root).all()}
+        if op == "answer":
+            if not Questions(store.root).answer(str(a.get("id", "")), str(a.get("text", ""))):
+                raise Rejected("soru bulunamadı ya da cevap boş")
+            return {"ok": True}
         if op == "state":
             keys = (
                 "verdict",
