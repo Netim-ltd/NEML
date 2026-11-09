@@ -10,6 +10,8 @@ and the numbers come back like a recipe build's. A script that fails, or comes o
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,37 @@ SCRIPT_PROMPT = (
     "Hacim hedefe yakın olsun: gereksiz boşluk ya da dolgu ekleme.{rules}{error}"
 )
 
+KEEP = 60  # scripts remembered; the oldest fall out
+NL = chr(10)
+WORD = re.compile(r"[a-zçğıöşü0-9]+")
+
+
+def _book(root: Path) -> list[dict[str, Any]]:
+    try:
+        return list(json.loads((root / "good_scripts.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
+
+
+def remember(root: Path, role: str, dims: list[float], code: str) -> None:
+    """A script that built the right size is kept as an example for the next similar part."""
+    rows = [r for r in _book(root) if r["code"] != code]
+    rows.append({"role": role[:80], "dims": [round(float(d), 1) for d in dims], "code": code[:4000]})
+    (root / "good_scripts.json").write_text(json.dumps(rows[-KEEP:], ensure_ascii=False), encoding="utf-8")
+
+
+def examples(root: Path, role: str, dims: list[float], n: int = 2) -> str:
+    """The n kept scripts closest to this part (shared words of the role, then size), as prompt text; empty when none."""
+    words = set(WORD.findall(role.lower()))
+    want = sorted(float(d) for d in dims)
+
+    def far(r: dict[str, Any]) -> tuple[int, float]:
+        got = sorted(r["dims"])
+        return -len(words & set(WORD.findall(r["role"].lower()))), sum(abs(a - b) / max(b, 1.0) for a, b in zip(got, want, strict=False))
+
+    best = sorted(_book(root), key=far)[:n]
+    return "".join(f"{NL}Bu lab'da çalışmış benzer betik ({r['role']}, {' x '.join(f'{d:g}' for d in r['dims'])} mm):{NL}{r['code']}" for r in best)
+
 
 async def build_script(gen: Any, lk: dict[str, Any], out: Path, progress: Any, rules: list[str] | None = None) -> dict[str, Any]:
     """Same contract as `Generator._part`: the built part (volume_mm3, bbox, stl, step, ...) or RuntimeError."""
@@ -52,10 +85,12 @@ async def build_script(gen: Any, lk: dict[str, Any], out: Path, progress: Any, r
     learned = "".join(f" Öğrenilmiş kural: {r}" for r in (gen.rules if rules is None else rules))
     want = sorted(float(v) for v in lk["dims_mm"])
     error = ""
+    root = gen._learn.root  # noqa: SLF001
+    shown = examples(root, str(lk["role"]), list(lk["dims_mm"]))
     for attempt in range(ATTEMPTS):
         progress(f"{name}: betik {attempt + 1}")
         said = await gen._llm.fill(  # noqa: SLF001
-            SCRIPT_PROMPT.format(name=name, role=lk["role"], dims=" x ".join(f"{v:g}" for v in lk["dims_mm"]), material=lk.get("material", "PETG"), rules=learned, error=error),
+            SCRIPT_PROMPT.format(name=name, role=lk["role"], dims=" x ".join(f"{v:g}" for v in lk["dims_mm"]), material=lk.get("material", "PETG"), rules=learned, error=error) + shown,
             SCRIPT_SCHEMA,
             profile="param_skill",
             max_tokens=1500,
@@ -74,6 +109,8 @@ async def build_script(gen: Any, lk: dict[str, Any], out: Path, progress: Any, r
             error = f"\n\nÖnceki betiğin kutusu {' x '.join(f'{g:.1f}' for g in got)} mm çıktı (sıralı), {' x '.join(f'{w:g}' for w in want)} mm olmalı. Düzelt."
             continue
         built["script"] = code
+        if not off:
+            remember(root, str(lk["role"]), list(lk["dims_mm"]), code)
         built["plan"] = str(said.get("plan", ""))[:400]
         return dict(built)
     raise RuntimeError(f"{name}: betikle parça üretilemedi ({error[-160:]})")
