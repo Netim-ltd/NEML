@@ -154,7 +154,9 @@ else
     ];
 
     // older scenes lack the flag: a robot with a joint tree and no body shell is an imported one
+    // a design the lab made itself ("generated") runs in the simulation as its own robot, so its tab stays open
     private bool IsImported => scene is { } s
+        && !(s.TryGetProperty("generated", out var gen) && gen.ValueKind == JsonValueKind.True)
         && ((s.TryGetProperty("imported", out var imp) && imp.ValueKind == JsonValueKind.True)
             || (s.TryGetProperty("rig", out var rig) && rig.ValueKind == JsonValueKind.Object && rig.GetProperty("joints").GetArrayLength() > 0
                 && !s.GetProperty("parts").EnumerateArray().Any(p => p.GetProperty("id").GetString() is "shell" or "shell_lower")));
