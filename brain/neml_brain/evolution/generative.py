@@ -56,7 +56,9 @@ from neml_brain.llm.schemas import MECH_PARAM_SCHEMA as RECIPE_SCHEMA
 log = structlog.get_logger(__name__)
 
 MAX_LINKS = 24
-MAX_ATTEMPTS = 5  # the layout solver and the gates answer in milliseconds; only a model turn costs minutes, and a fifth try is cheap next to a lost design
+REVISE_PATIENCE = 4  # rounds in a row without fewer problems before the lab stops and asks the owner
+REVISE_HOURS = 6.0
+MAX_ATTEMPTS = 30  # the plan loop runs until a plan clears the gates; only a runaway guard
 DENSITY = {"PETG": 1.27, "PA6-CF": 1.17, "PLA": 1.24, "ASA": 1.07}  # g/cm3
 NUM = {"type": "number"}
 
@@ -800,6 +802,16 @@ class Generator:
             *layout_issues(plan),
             *robot_issues(plan),
         ]  # a layout the critic still dislikes keeps the design a draft
+        if problems:  # no round limit (the model is ours, a round costs only time): plan again with the findings until clean, stop when stuck
+            best = min(ckpt.get("best", 10**6), len(problems))
+            stuck = 0 if best < ckpt.get("best", 10**6) else ckpt.get("stuck", 0) + 1
+            t0 = ckpt.setdefault("t0", time.time())
+            if stuck < REVISE_PATIENCE and time.time() - t0 < REVISE_HOURS * 3600:
+                progress(f"tur {ckpt.get('rounds', 0) + 1}: {len(problems)} sorun, plan bulguları görerek yeniden yazılıyor")
+                feedback = "\nÖnceki tasarımın sert yargıç bulguları: " + "; ".join(problems[:6]) + ". Bunları gideren yeni bir plan yaz."
+                ckpt.update(plan=await self._race(brief + feedback, progress), out=uuid.uuid4().hex[:8], built={}, best=best, stuck=stuck, rounds=ckpt.get("rounds", 0) + 1)
+                save()
+                return await self.design(brief, actor, progress, auto_activate, ckpt, save)
         entries = await self._entries(plan, built, meshes, urdf, (summary, found, rig))
         model, draft_id = await self._store(entries, plan, name, actor, brief, problems)
         activated = False
