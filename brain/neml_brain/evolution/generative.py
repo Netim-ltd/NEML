@@ -274,7 +274,11 @@ def plan_score(plan: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     tip = tip_margin(plan)
     issues = len(layout_issues(plan)) + len(robot_issues(plan))
     info = {"layout_issues": issues, "tip_margin": round(tip, 2), "links": len(plan["links"])}
-    return -3.0 * issues + min(tip, 2.0) - 0.02 * len(plan["links"]), info
+    from neml_brain.evolution.design_score import mission_score
+
+    mission, facts = mission_score(plan)
+    info["mission"] = facts
+    return -3.0 * issues + mission, info
 
 
 VARIANT_HINTS = [
