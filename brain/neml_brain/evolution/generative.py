@@ -568,7 +568,7 @@ class Generator:
             progress(f"plan {attempt + 1}")
             try:
                 raw = await self._llm.fill(
-                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + sim_hint(self._learn.root) + Questions(self._learn.root).rules() + Questions(self._learn.root).example(brief) + problem,
+                    PLAN_PROMPT.format(brief=brief, max=MAX_LINKS, notes=notes or "(yok)", catalog=catalog_text()) + hint + sim_hint(self._learn.root) + Questions(self._learn.root).rules() + (Questions(self._learn.root).example(brief) if not hint else "") + problem,
                     PLAN_SCHEMA,
                     profile="param_skill",
                     max_tokens=4000,
