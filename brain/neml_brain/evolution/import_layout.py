@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 # Copyright (c) 2026 Mustafa Gulsoy.
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Where imported meshes go in the scene, so a repository of parts is understandable on screen.
@@ -176,11 +177,11 @@ def place(imports: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:  # noqa
             continue
         f = float(a["factor"])
         f3 = np.asarray(a.get("scale3") or [f, f, f], dtype=float)
-        centre = rotate(a["quat"], np.asarray(entry.get("center", [0, 0, 0]), dtype=float) * f3)
-        local = np.asarray(a.get("vpos", [0, 0, 0]), dtype=float) + rotate(
-            a.get("vquat", [0, 0, 0, 1]),
-            np.asarray(entry.get("center", [0, 0, 0]), dtype=float) * f3,
-        )
+        # a robot the lab designed is planned with each part's box centred on its link origin (and the simulation builds it so), so its mesh
+        # is centred there whatever corner the CAD drawing started from
+        own = np.zeros(3) if entry.get("repo") == "generated" else np.asarray(entry.get("center", [0, 0, 0]), dtype=float)
+        centre = rotate(a["quat"], own * f3)
+        local = np.asarray(a.get("vpos", [0, 0, 0]), dtype=float) + rotate(a.get("vquat", [0, 0, 0, 1]), own * f3)
         out.append(
             {
                 **base,

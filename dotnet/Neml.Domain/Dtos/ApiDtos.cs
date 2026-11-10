@@ -185,7 +185,8 @@ public record GenomeNodeResponse(
     GenomeStatus Status,
     string? ParentId,
     decimal? FitnessScore,
-    IReadOnlyList<GenomeNodeResponse> Children);
+    IReadOnlyList<GenomeNodeResponse> Children,
+    DateTimeOffset? CreatedAt = null);
 
 // ---------- Approvals ----------
 

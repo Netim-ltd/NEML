@@ -129,7 +129,7 @@ public sealed record Candidate(
 /// <summary>GET /genomes/tree node, children nested.</summary>
 public sealed record GenomeNode(
     string Id, string Name, int Version, string Status, string? ParentId, double? FitnessScore,
-    IReadOnlyList<GenomeNode> Children);
+    IReadOnlyList<GenomeNode> Children, DateTimeOffset? CreatedAt = null);
 
 /// <summary>§7 skills.</summary>
 public sealed record Skill(string Id, string SkillKey, int Version, string GenomeId, string Status, DateTimeOffset CreatedAt);

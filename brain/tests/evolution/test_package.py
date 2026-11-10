@@ -28,3 +28,16 @@ def test_generated_rows_read_the_whole_stored_plan():
     plan = {"links": [{"name": "govde", "source": "designed", "material": "PETG", "dims_mm": [100, 80, 30], "role": "gövde"}]}
     rows = generated_rows({"mechanical": {"generated": {"plan": plan}, "imports": []}})
     assert [r["part"] for r in rows] == ["govde: gövde"]
+
+
+def test_a_designed_part_is_centred_on_its_link_origin_in_the_preview_like_in_the_simulation(tmp_path):
+    import numpy as np
+
+    from neml_brain.evolution.generative import centre_stl
+    from neml_brain.evolution.mesh_formats import stl_triangles, write_stl
+
+    cube = np.array([[[0, 0, 0], [10, 0, 0], [0, 20, 0]], [[0, 0, 30], [10, 0, 30], [0, 20, 30]]], dtype=float)
+    path = write_stl(cube, tmp_path / "a.stl")
+    centre_stl(path)
+    pts = stl_triangles(path).reshape(-1, 3)
+    assert np.allclose((pts.min(0) + pts.max(0)) / 2, 0, atol=0.01)

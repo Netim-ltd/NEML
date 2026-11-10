@@ -41,26 +41,62 @@
     <p class="muted">Henüz model yok. Lab ilk açıldığında seed genomdan oluşur.</p>
 }
 
-<p><label class="chip"><input type="checkbox" @bind="showArchived" /> Arşivlenenleri göster</label></p>
-<div class="grid">
-    @foreach (var m in models.Where(m => showArchived || m.Active != "deprecated"))
-    {
-        <article class="card">
-            <header>
-                <h2><a class="link" href="@($"evrim/{m.Name}")">@m.Name</a></h2>
-                <span class="state">@m.Active</span>
-            </header>
-            <p>Aktif genom: <code>@m.ActiveId</code>@(m.Fitness is { } f ? $" · puan {f:0.###}" : "")</p>
-            <p class="muted">@m.Versions genom sürümü · @m.Campaigns evrim kampanyası (@m.Running sürüyor)</p>
-            <p class="muted">@(m.Robots == 0 ? "Fiziksel robot yok: tüm çalışma simülasyonda." : $"{m.Robots} fiziksel robot")</p>
-            <a class="primary" href="@($"evrim/{m.Name}")">Aç: 3B tasarım, iç aksam, evrim ve eğitim</a>
-            @if (m.Active != "aktif")
+<p class="toolbar">
+    <label class="chip"><input type="checkbox" @bind="showArchived" /> Arşivlenenleri göster</label>
+    <span class="tabs" role="group" aria-label="Görünüm">
+        <button class="@(listView ? null : "active")" @onclick="() => listView = false">Kart</button>
+        <button class="@(listView ? "active" : null)" @onclick="() => listView = true">Liste</button>
+    </span>
+    <span class="muted">En yeni üstte · @Visible.Count() model</span>
+</p>
+
+@if (listView)
+{
+    <table class="model-list">
+        <thead><tr><th>Model</th><th>Durum</th><th>Genom</th><th>Puan</th><th>Oluşturuldu</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var m in Visible)
             {
-                <button class="ghost" disabled="@busyModel.Equals(m.Name)" @onclick="() => ArchiveAsync(m.Name)">Arşivle</button>
+                <tr>
+                    <td><a class="link" href="@($"evrim/{m.Name}")">@m.Name</a></td>
+                    <td><span class="state">@m.Active</span></td>
+                    <td><code>@m.ActiveId</code></td>
+                    <td>@(m.Fitness is { } f ? f.ToString("0.###") : "—")</td>
+                    <td class="muted">@(m.Created is { } c ? c.LocalDateTime.ToString("dd.MM HH:mm") : "—")</td>
+                    <td><button class="ghost" aria-expanded="@open.Contains(m.Name)" @onclick="() => ToggleAsync(m)">@(open.Contains(m.Name) ? "Gizle" : "Ayrıntı")</button></td>
+                </tr>
+                @if (open.Contains(m.Name))
+                {
+                    <tr><td colspan="6">@DetailView(m)</td></tr>
+                }
             }
-        </article>
-    }
-</div>
+        </tbody>
+    </table>
+}
+else
+{
+    <div class="grid">
+        @foreach (var m in Visible)
+        {
+            <article class="card">
+                <header>
+                    <h2><a class="link" href="@($"evrim/{m.Name}")">@m.Name</a></h2>
+                    <span class="state">@m.Active</span>
+                </header>
+                <p>Aktif genom: <code>@m.ActiveId</code>@(m.Fitness is { } f ? $" · puan {f:0.###}" : "")</p>
+                <p class="muted">@m.Versions genom sürümü · @m.Campaigns evrim kampanyası (@m.Running sürüyor)@(m.Created is { } c ? $" · {c.LocalDateTime:dd.MM HH:mm}" : "")</p>
+                <p class="muted">@(m.Robots == 0 ? "Fiziksel robot yok: tüm çalışma simülasyonda." : $"{m.Robots} fiziksel robot")</p>
+                <button class="ghost" aria-expanded="@open.Contains(m.Name)" @onclick="() => ToggleAsync(m)">@(open.Contains(m.Name) ? "Ayrıntıyı gizle" : "Ayrıntı")</button>
+                @if (open.Contains(m.Name)) { @DetailView(m) }
+                <a class="primary" href="@($"evrim/{m.Name}")">Aç: 3B tasarım, iç aksam, evrim ve eğitim</a>
+                @if (m.Active != "aktif")
+                {
+                    <button class="ghost" disabled="@busyModel.Equals(m.Name)" @onclick="() => ArchiveAsync(m.Name)">Arşivle</button>
+                }
+            </article>
+        }
+    </div>
+}
 
 @if (robots.Length > 0)
 {
@@ -77,7 +113,53 @@
 }
 
 @code {
-    private sealed record ModelCard(string Name, string Active, string ActiveId, double? Fitness, int Versions, int Campaigns, int Running, int Robots);
+    private sealed record ModelCard(string Name, string Active, string ActiveId, double? Fitness, int Versions, int Campaigns, int Running, int Robots, DateTimeOffset? Created);
+
+    // what the lazy details show: counted from the model's scene only when the row is opened (nothing is fetched for closed rows)
+    private sealed record Detail(int Parts, int Printed, int Bought, int FitIssues, bool Generated, string[] Groups);
+
+    private readonly HashSet<string> open = [];
+    private readonly Dictionary<string, Detail?> details = [];
+    private readonly HashSet<string> loading = [];
+    private bool listView;
+
+    private IEnumerable<ModelCard> Visible => models.Where(m => showArchived || m.Active != "deprecated");
+
+    private async Task ToggleAsync(ModelCard m)
+    {
+        if (!open.Add(m.Name)) { open.Remove(m.Name); return; }
+        if (details.ContainsKey(m.Name)) { return; }
+        loading.Add(m.Name);
+        try
+        {
+            if (await Api.GetModelSceneAsync(m.ActiveId) is { } sc)
+            {
+                var bom = sc.TryGetProperty("bom", out var b) && b.ValueKind == System.Text.Json.JsonValueKind.Array ? b.EnumerateArray().ToList() : [];
+                var groups = bom.Select(r => r.TryGetProperty("group", out var g) ? g.GetString() ?? "" : "").GroupBy(g => g).Select(g => $"{g.Key}: {g.Count()}").ToArray();
+                var fit = sc.TryGetProperty("fit", out var f) && f.TryGetProperty("issues", out var iss) && iss.ValueKind == System.Text.Json.JsonValueKind.Array ? iss.GetArrayLength() : 0;
+                var parts = sc.TryGetProperty("parts", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Array ? p.GetArrayLength() : 0;
+                details[m.Name] = new Detail(parts, bom.Count(r => r.TryGetProperty("group", out var g) && (g.GetString() ?? "").StartsWith("Basılı")),
+                    bom.Count(r => r.TryGetProperty("group", out var g) && (g.GetString() ?? "").StartsWith("Satın")), fit,
+                    sc.TryGetProperty("generated", out var gen) && gen.ValueKind == System.Text.Json.JsonValueKind.True, groups);
+            }
+            else { details[m.Name] = null; }
+        }
+        catch (HttpRequestException) { details[m.Name] = null; }
+        finally { loading.Remove(m.Name); }
+    }
+
+    private Microsoft.AspNetCore.Components.RenderFragment DetailView(ModelCard m) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "muted");
+        builder.AddContent(2, loading.Contains(m.Name) ? "Yükleniyor…"
+            : details.GetValueOrDefault(m.Name) is { } d
+                ? $"{d.Parts} 3B parça · {d.Printed} basılı, {d.Bought} satın alınan kalem · yerleşim sorunu {d.FitIssues}"
+                    + (d.Generated ? " · lab tasarımı (simülasyonda kendi gövdesiyle çalışır)" : "")
+                    + (d.Groups.Length > 0 ? " · " + string.Join(", ", d.Groups) : "")
+                : "Bu modelin 3B sahnesi henüz hazır değil.");
+        builder.CloseElement();
+    };
 
     private void Open(string mode)
     {
@@ -160,8 +242,9 @@
                 var active = all.FirstOrDefault(n => n.Status == "active") ?? all.LastOrDefault(n => n.Status is "draft" or "testing") ?? all[0];
                 var mine = campaigns.Where(c => ModelOfCampaign(c, first) == g.Key).ToList();
                 return new ModelCard(g.Key, active.Status == "active" ? "aktif" : active.Status, active.Id, active.FitnessScore,
-                    all.Count, mine.Count, mine.Count(c => c.State == "active"), robots.Count(r => ModelOf(r.GenomeId) == g.Key));
-            })];
+                    all.Count, mine.Count, mine.Count(c => c.State == "active"), robots.Count(r => ModelOf(r.GenomeId) == g.Key),
+                    all.Max(n => n.CreatedAt));
+            }).OrderByDescending(m => m.Created ?? DateTimeOffset.MinValue)];
         }
         catch (HttpRequestException)
         {

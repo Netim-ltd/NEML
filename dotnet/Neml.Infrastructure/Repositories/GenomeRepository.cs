@@ -11,7 +11,7 @@ namespace Neml.Infrastructure.Repositories;
 /// <summary>GET /genomes/tree of section 9.3 — the lineage the mobile app draws.</summary>
 public class GenomeRepository(NemlDbContext db)
 {
-    private record Row(string Id, string Name, int Version, GenomeStatus Status, string? ParentId, decimal? FitnessScore);
+    private record Row(string Id, string Name, int Version, GenomeStatus Status, string? ParentId, decimal? FitnessScore, DateTimeOffset CreatedAt);
 
     /// <summary>
     /// ponytail: reads the whole genomes table and assembles the tree in memory. That is a few
@@ -21,7 +21,7 @@ public class GenomeRepository(NemlDbContext db)
     {
         var rows = await db.Genomes.AsNoTracking()
             .OrderBy(g => g.CreatedAt)
-            .Select(g => new Row(g.Id, g.Name, g.Version, g.Status, g.ParentId, g.FitnessScore))
+            .Select(g => new Row(g.Id, g.Name, g.Version, g.Status, g.ParentId, g.FitnessScore, g.CreatedAt))
             .ToListAsync(ct);
 
         var known = rows.Select(r => r.Id).ToHashSet();
@@ -36,7 +36,7 @@ public class GenomeRepository(NemlDbContext db)
                 ? childrenOf[row.Id].Select(Build).ToList()
                 : [];
             return new GenomeNodeResponse(row.Id, row.Name, row.Version, row.Status, row.ParentId,
-                row.FitnessScore, children);
+                row.FitnessScore, children, row.CreatedAt);
         }
 
         return rows.Where(r => r.ParentId is null || !known.Contains(r.ParentId)).Select(Build).ToList();

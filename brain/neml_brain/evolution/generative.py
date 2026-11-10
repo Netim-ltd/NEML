@@ -23,6 +23,7 @@ import hashlib
 import json
 import math
 import re
+import struct
 import time
 import uuid
 from copy import deepcopy
@@ -376,6 +377,21 @@ def layout_issues(plan: dict[str, Any]) -> list[str]:
                 f"{name}, bağlı olduğu {up} parçasına değmiyor (boşluk {gap:.0f} mm); eklem konumunu parçaya yaklaştır"
             )
     return issues
+
+
+def centre_stl(stl: Path) -> None:
+    """Move a binary STL so the middle of its bounding box is the origin (the CAD recipes start a part at a corner)."""
+    from neml_brain.evolution.mesh_formats import stl_triangles, write_stl
+
+    try:
+        tri = stl_triangles(stl)
+    except (OSError, ValueError, struct.error):  # not a binary STL: leave it
+        return
+    if len(tri) == 0:
+        return
+    mid = (tri.reshape(-1, 3).min(axis=0) + tri.reshape(-1, 3).max(axis=0)) / 2
+    if abs(mid).max() > 0.01:
+        write_stl(tri - mid, stl)
 
 
 def urdf_of(plan: dict[str, Any], meshes: dict[str, str]) -> str:
@@ -864,6 +880,7 @@ class Generator:
                 continue
             info = built[name]
             stl = Path(info["stl"])
+            centre_stl(stl)  # the URDF puts the mesh at the link origin, where the plan has the part's centre
             mesh = await self._imp._mesh(stl, "stl", stl.parent)  # noqa: SLF001
             step_url = await self._imp._uploader.upload(Path(info["step"]), "step")  # noqa: SLF001
             if step_url:

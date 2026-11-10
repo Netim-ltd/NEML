@@ -375,3 +375,8 @@ a.primary + a.primary { margin-left: .5rem; }
     *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 @media print { .sidenav, .mobilebar, .assistant, .assistant-fab { display: none !important; } .shell.signed-in { display: block; } }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); }
+.toolbar .tabs { margin-bottom: 0; }
+.model-list { width: 100%; border-collapse: collapse; }
+.model-list th, .model-list td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
