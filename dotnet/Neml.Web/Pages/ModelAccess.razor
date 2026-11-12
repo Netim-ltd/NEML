@@ -3,6 +3,7 @@
 @page "/model-erisimi"
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 @using System.Text.Json
 
 <PageTitle>Model erişimi — NEML</PageTitle>
@@ -19,11 +20,13 @@
 
 @if (fresh is { } nk)
 {
-    <section class="card" aria-labelledby="newkey-title">
+    @* sticky: the key must not end up above the fold when it was made from the form at the bottom of the page *@
+    <section class="card" aria-labelledby="newkey-title" style="position:sticky;top:.5rem;z-index:20;border:2px solid var(--accent)">
         <h2 id="newkey-title">@nk.Name için yeni anahtar</h2>
-        <p><code>@nk.Key</code></p>
+        <p><code style="user-select:all;word-break:break-all">@nk.Key</code></p>
         <Notice Kind="warn">Bu anahtar yalnızca şimdi görünür. Kopyala ve istemciye ver; kaybedersen "Anahtarı yenile" ile yenisini üret (eskisi çalışmaz).</Notice>
-        <button class="primary" type="button" @onclick="() => fresh = null">Kopyaladım, kapat</button>
+        <button class="primary" type="button" @onclick="CopyAsync">@(copied ? "Kopyalandı" : "Kopyala")</button>
+        <button class="ghost" type="button" @onclick="CloseKey">Kaydettim, kapat</button>
     </section>
 }
 
@@ -139,6 +142,19 @@ else
 
     private List<Row>? clients;
     private NewKey? fresh;
+    private bool copied;
+
+    private async Task CopyAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", fresh!.Key);
+            copied = true;
+        }
+        catch (JSException) { Say("warn", "Kopyalanamadı; anahtarı seçip elle kopyala."); }
+    }
+
+    private void CloseKey() { fresh = null; copied = false; }
     private int contextTokens = 16000;
     private bool busy;
     private string? message;
@@ -193,6 +209,12 @@ else
     private async Task AddAsync()
     {
         if (NameError is not null) { return; }
+        if (clients?.Any(c => c.Name == newName.Trim()) == true)
+        {
+            Say("warn", $"{newName.Trim()} zaten var; anahtarı yalnızca oluşturulurken gösterilir. Yeni anahtar için listeden \"Anahtarı yenile\" kullan.");
+            return;
+        }
+
         if (await RunAsync(new { op = "gateway", action = "set", name = newName.Trim(), maxTokens = newMax, dailyTokens = newDaily, priority = newPriority }) is { } r)
         {
             Apply(r);
@@ -229,6 +251,8 @@ else
         if (r.TryGetProperty("new_key", out var nk) && nk.ValueKind == JsonValueKind.Object)
         {
             fresh = new NewKey(nk.GetProperty("name").GetString() ?? "", nk.GetProperty("key").GetString() ?? "");
+            copied = false;
+            _ = Js.InvokeVoidAsync("window.scrollTo", 0, 0).AsTask().ContinueWith(_ => { }, TaskScheduler.Default); // the form is at the bottom, the key shows at the top
         }
     }
 
