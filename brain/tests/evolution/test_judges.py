@@ -45,6 +45,7 @@ def _robot(**over):
         link("motor_r", "base", "tt_motor", at=(0, -40, 0)),
         link("tekerlek_l", "base", "tt_wheel", "sol tekerlek", at=(0, 70, 0), revolute=True),
         link("tekerlek_r", "base", "tt_wheel", "sağ tekerlek", at=(0, -70, 0), revolute=True),
+        link("caster", "base", None, "sarkaç tekeri", "designed", at=(70, 0, -10)),
     ]
     from neml_brain.evolution.catalog import apply
 
@@ -233,3 +234,15 @@ def test_equip_stands_a_turntable_wheel_up():
             lk["dims_mm"] = [65, 65, 26]
     wheels = [lk for lk in equip(plan)["links"] if lk["joint"]["type"] == "revolute" and "wheel" in (lk["name"] + lk.get("role", "")).lower()]
     assert wheels and all(w["joint"]["axis"] == "y" and w["dims_mm"][1] == 26 for w in wheels)
+
+
+def test_real_world_faults_are_named_and_equip_fixes_the_voltage():
+    from neml_brain.evolution.judges import equip, robot_issues
+
+    plan = _robot()
+    plan["links"] = [lk for lk in plan["links"] if lk["name"] != "caster"]
+    plan["links"].append({**plan["links"][3], "name": "lipo", "part": "lipo_3s_2200"})
+    plan["links"].append({**plan["links"][4], "name": "n20", "part": "n20_motor"})
+    text = "; ".join(robot_issues(plan))
+    assert "motor yanar" in text and "sarkaç" in text and "boşta" in text
+    assert any(lk.get("part") == "buck_lm2596" for lk in equip(plan)["links"])

@@ -92,6 +92,37 @@ def _loads(plan: dict[str, Any]) -> tuple[list[str], dict[str, list[dict[str, An
     return out, kinds, wheels, arms
 
 
+CASTER = ("caster", "sarkaç", "sarkac", "top tekerlek", "ball")
+FITS = {"tt_wheel": {"tt_motor"}}  # a bought wheel only sits on these motor shafts
+
+
+def _volt_max(spec: Any) -> float:
+    return max(float(v) for v in str(spec).split("-"))
+
+
+def real_world_issues(plan: dict[str, Any], kinds: dict[str, list[dict[str, Any]]], n_wheels: int) -> list[str]:
+    """What the simulation cannot see but a bench test would: a battery above the motors' rating without a regulator, a wheel
+    that does not fit the motor shaft, a two-wheeler with nothing to rest on, and motors that drive nothing.
+    # ponytail: rated voltage and part names only; current, shaft diameter and wiring are not modelled."""
+    out: list[str] = []
+    motors = kinds.get("dc_motor", [])
+    if motors and kinds.get("battery") and not kinds.get("regulator"):
+        low = min(_volt_max(m["volt"]) for m in motors)
+        high = max(float(b["volt"]) for b in kinds["battery"])
+        if high > 1.2 * low:
+            out.append(f"batarya {high:g} V ama motor en çok {low:g} V: motor yanar; buck_lm2596 (regülatör) ekle ya da batarya/motoru voltajı uyan parçayla değiştir")
+    for wheel_id, ok in FITS.items():
+        n = sum(1 for lk in plan["links"] if lk.get("part") == wheel_id)
+        have = sum(1 for m in motors if m["id"] in ok)
+        if n > have:
+            out.append(f"{n} {wheel_id} tekeri var ama bu tekere oturan motor ({', '.join(sorted(ok))}) {have} tane: tekerlek motor miline takılamaz; motoru tekere uyanla değiştir")
+    if n_wheels == 2 and not any(any(c in f"{lk['name']} {lk.get('role', '')}".lower() for c in CASTER) for lk in plan["links"]):
+        out.append("iki tekerlekli robotta denge için sarkaç (caster) tekeri yok: gövdenin ön ya da arkasına caster adlı küçük bir link ekle (alt yüzü tekerlek tabanıyla aynı seviyede)")
+    if n_wheels and len(motors) > n_wheels:
+        out.append(f"{len(motors)} DC motor var ama yalnızca {n_wheels} tekerlek dönüyor: boşta kalan motoru kaldır")
+    return out
+
+
 def robot_issues(plan: dict[str, Any]) -> list[str]:
     """What is wrong with a robot plan by the numbers (empty = nothing found): parts must come from the catalog, every moving joint
     needs an actuator that can carry its load with a safety factor, a powered robot needs a controller, a battery and a stop switch,
@@ -116,6 +147,7 @@ def robot_issues(plan: dict[str, Any]) -> list[str]:
                 out.append(f"hareketli robotta {label} yok")
         if not any(p["id"] == "estop_22mm" for p in kinds.get("switch", [])):
             out.append("acil durdurma düğmesi (estop_22mm) eklenmeli")
+    out += real_world_issues(plan, kinds, len(wheels))
     if wheels:  # the simulation runs the design itself: a wheeled plan it cannot drive goes back to the model now
         from neml_brain.evolution.robot_sdf import NotDrivable, sdf_of
 
@@ -303,7 +335,8 @@ def equip(plan: dict[str, Any]) -> dict[str, Any]:
             if i < len(held) and held[i] >= SAFETY * need:
                 continue
             fits = [p for p in CATALOG.values() if p["kind"] == kind and p["torque_kgcm"] >= SAFETY * need]
-            pick = min(fits or [p for p in CATALOG.values() if p["kind"] == kind], key=lambda p: (p["torque_kgcm"] < SAFETY * need, p["mass_g"]))
+            seats = set().union(*(FITS.get(str(lk.get("part")), set()) for lk in out["links"]))  # motors the bought wheels fit on come first
+            pick = min(fits or [p for p in CATALOG.values() if p["kind"] == kind], key=lambda p: (p["torque_kgcm"] < SAFETY * need, bool(seats) and p["id"] not in seats, p["mass_g"]))
             want.append(pick["id"])
             if i < len(held):
                 held[i] = 0  # the weaker one it replaces stays, the new one is added
@@ -312,6 +345,14 @@ def equip(plan: dict[str, Any]) -> dict[str, Any]:
     drivers = sum(p.get("channels", 0) for p in kinds.get("driver", []))  # a driver board is added only when the robot has none for its actuators
     if motors and not any(p["id"] == "tb6612" for p in kinds.get("driver", [])):
         want += ["tb6612"] * -(-motors // 2)
+    batt = [p for p in kinds.get("battery", [])] or [CATALOG["lipo_3s_2200"]]
+    held_motors = [p for p in kinds.get("dc_motor", [])] + [CATALOG[pid] for pid in want if CATALOG[pid]["kind"] == "dc_motor"]
+    if (
+        held_motors
+        and not kinds.get("regulator")
+        and max(float(b["volt"]) for b in batt) > 1.2 * min(_volt_max(m["volt"]) for m in held_motors)
+    ):
+        want.append("buck_lm2596")  # the battery is above the motors' rating: step it down
     if servos > 4 and drivers < servos:
         want.append("pca9685")
     for kind, pid in (("board", "esp32_devkit"), ("battery", "lipo_3s_2200"), ("switch", "estop_22mm")):

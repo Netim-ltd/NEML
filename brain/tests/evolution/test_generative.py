@@ -75,6 +75,9 @@ PLAN = {
         },
     ],
 }
+CASTER = {"name": "caster", "parent": "base", "role": "sarkaç tekeri", "source": "designed", "material": "PETG", "dims_mm": [20, 20, 20], "mass_g": 3, "joint": {"type": "fixed", "x": 60, "y": 0, "z": -30, "axis": "z"}}
+RUNS = {**PLAN, "links": [*PLAN["links"], CASTER]}  # a two-wheeler the real-world judge accepts
+
 RECIPE = {
     "solids": [{"id": "a", "t": "box", "at": [-80, -50, -20], "size": [160, 100, 40]}],
     "steps": [],
@@ -123,7 +126,7 @@ class Llm:
     async def fill(self, prompt, schema, profile="x", max_tokens=None):
         self.calls.append(prompt[:30])
         if "Bir robot tasarla" in prompt:
-            root, *kids = PLAN["links"]
+            root, *kids = RUNS["links"]
             return {
                 "name": PLAN["name"],
                 "purpose": PLAN["purpose"],
@@ -147,8 +150,8 @@ class Mcp:
         step = stl.with_suffix(".step")
         step.write_text("step")
         return {
-            "volume_mm3": 160 * 100 * 40 * 0.3,
-            "bbox": [-80, -50, -20, 80, 50, 20],
+            "volume_mm3": (20 if args["name"] == "caster" else 160 * 100 * 40) * 0.3 * (20 * 20 if args["name"] == "caster" else 1),
+            "bbox": [-10, -10, -10, 10, 10, 10] if args["name"] == "caster" else [-80, -50, -20, 80, 50, 20],
             "stl": str(stl),
             "step": str(step),
             "center_of_mass": [0, 0, 0],
@@ -249,7 +252,7 @@ def _with_y(*ys):
         {**PLAN["links"][i + 1], "joint": {**PLAN["links"][i + 1]["joint"], "y": y}}
         for i, y in enumerate(ys)
     ]
-    return {**PLAN, "links": [PLAN["links"][0], *kids]}
+    return {**PLAN, "links": [PLAN["links"][0], *kids, CASTER]}
 
 
 def test_the_layout_critic_finds_overlaps_and_floating_parts():
@@ -266,11 +269,11 @@ async def test_a_restarted_design_reuses_its_plan_and_the_parts_already_built(tm
 
     llm = Llm()
     gen = Generator(Mcp(tmp_path), Importer(), sessions, llm, LearningStore(tmp_path / "l"), tmp_path / "gen")
-    ckpt = {"plan": equip(PLAN), "out": "abc", "built": {}}  # a stored plan went through equip() in _plan
+    ckpt = {"plan": equip(RUNS), "out": "abc", "built": {}}  # a stored plan went through equip() in _plan
     saved = []
     out = await gen.design("x", "owner", ckpt=ckpt, save=lambda: saved.append(len(ckpt["built"])))
     assert out["model"] == "bahce_gezgini"
-    assert not any("Bir robot tasarla" in c for c in llm.calls)  # no new plan
+    assert not any("Bir robot tasarla" in c for c in llm.calls), llm.calls  # no new plan
     assert saved and ckpt["built"]  # each built part was checkpointed
 
 

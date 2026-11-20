@@ -108,6 +108,13 @@ def sdf_of(plan: dict[str, Any], camera: bool = False) -> tuple[str, dict[str, A
         sx, sy, sz = (v * MM for v in size[n])
         c = centre[n]
         geom = f"<geometry><box><size>{sx:.5f} {sy:.5f} {sz:.5f}</size></box></geometry>"
+        if any(w in f"{n} {names[n].get('role', '')}".lower() for w in ("caster", "sarkaç", "sarkac")):  # a designed caster rolls: frictionless sphere
+            ball = f"<geometry><sphere><radius>{min(sx, sy, sz) / 2:.5f}</radius></sphere></geometry>"
+            parts.append(
+                f'<collision name="c_{n}">{pose(c[0] * MM, c[1] * MM, c[2] * MM)}{ball}<surface><friction><ode><mu>{CASTER_MU}</mu><mu2>{CASTER_MU}</mu2></ode></friction></surface></collision>'
+                f'<visual name="v_{n}">{pose(c[0] * MM, c[1] * MM, c[2] * MM)}{ball}</visual>'
+            )
+            continue
         parts.append(f'<collision name="c_{n}">{pose(c[0] * MM, c[1] * MM, c[2] * MM)}{geom}</collision><visual name="v_{n}">{pose(c[0] * MM, c[1] * MM, c[2] * MM)}{geom}</visual>')
     xs = [centre[n][0] * MM for n in body]
     xmin = min(c - size[n][0] / 2 * MM for n, c in zip(body, xs, strict=True))
