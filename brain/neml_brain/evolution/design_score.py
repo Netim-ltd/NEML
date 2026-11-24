@@ -39,6 +39,10 @@ def mission_score(plan: dict[str, Any]) -> tuple[float, dict[str, Any]]:
     ground = min(facts["clearance_mm"] / 15.0, 1.0)
     stable = min(tip / 1.0, 2.0)
     light = 1.0 / (1.0 + facts["mass_kg"])  # between 0 and 1, never decides alone
-    score = 2.0 * slope + 2.0 * step + 1.0 * ground + 1.5 * stable + 1.0 * light - 0.02 * len(plan["links"])
-    info = {"drivable": True, "slope": round(slope, 2), "step": round(step, 2), "ground": round(ground, 2), "tip_margin": round(tip, 2), "mass_kg": facts["mass_kg"]}
+    from neml_brain.evolution.catalog import CATALOG
+
+    cost = sum(CATALOG.get(str(lk.get("part")), {}).get("usd", 0) for lk in plan["links"] if lk["source"] == "bought") + 0.03 * sum(float(lk["mass_g"]) for lk in plan["links"] if lk["source"] == "designed")
+    pla = any(lk["source"] == "designed" and str(lk.get("material", "")).upper() == "PLA" for lk in plan["links"])  # softens in a sunny garden
+    score = -min(cost / 100.0, 1.0) - (0.5 if pla else 0.0) + 2.0 * slope + 2.0 * step + 1.0 * ground + 1.5 * stable + 1.0 * light - 0.02 * len(plan["links"])
+    info = {"drivable": True, "slope": round(slope, 2), "step": round(step, 2), "ground": round(ground, 2), "tip_margin": round(tip, 2), "mass_kg": facts["mass_kg"], "cost_usd": round(cost)}
     return score, info

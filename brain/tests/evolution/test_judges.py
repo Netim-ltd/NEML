@@ -246,3 +246,14 @@ def test_real_world_faults_are_named_and_equip_fixes_the_voltage():
     text = "; ".join(robot_issues(plan))
     assert "motor yanar" in text and "sarkaç" in text and "boşta" in text
     assert any(lk.get("part") == "buck_lm2596" for lk in equip(plan)["links"])
+
+
+def test_a_solid_block_is_named_and_cost_enters_the_score():
+    from neml_brain.evolution.design_score import mission_score
+    from neml_brain.evolution.judges import robot_issues
+
+    plan = _robot()
+    plan["links"][0]["mass_g"] = 900
+    text = "; ".join(robot_issues(plan))
+    assert "dolu basılmış" in text
+    assert mission_score(plan)[1]["cost_usd"] > 0

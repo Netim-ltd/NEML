@@ -93,6 +93,8 @@ def _loads(plan: dict[str, Any]) -> tuple[list[str], dict[str, list[dict[str, An
 
 
 CASTER = ("caster", "sarkaç", "sarkac", "top tekerlek", "ball")
+RUN_MIN = 20.0  # minutes the battery must carry the motors
+MAX_PRINT_G = 500.0  # one printed part heavier than this is a solid block, not a shell
 FITS = {"tt_wheel": {"tt_motor"}}  # a bought wheel only sits on these motor shafts
 
 
@@ -120,6 +122,16 @@ def real_world_issues(plan: dict[str, Any], kinds: dict[str, list[dict[str, Any]
         out.append("iki tekerlekli robotta denge için sarkaç (caster) tekeri yok: gövdenin ön ya da arkasına caster adlı küçük bir link ekle (alt yüzü tekerlek tabanıyla aynı seviyede)")
     if n_wheels and len(motors) > n_wheels:
         out.append(f"{len(motors)} DC motor var ama yalnızca {n_wheels} tekerlek dönüyor: boşta kalan motoru kaldır")
+    amp = sum(m.get("amp", 0.0) for m in motors)
+    mah = sum(b.get("mah", 0) for b in kinds.get("battery", []))
+    if amp and mah and mah / ((amp + 0.3) * 1000) * 60 < RUN_MIN:  # motors plus about 0.3 A for the board
+        out.append(f"batarya {mah} mAh, motorlar ~{amp:.2f} A çekiyor: {mah / ((amp + 0.3) * 1000) * 60:.0f} dk çalışır (en az {RUN_MIN:g} dk); daha büyük batarya seç")
+    drivers = [d for d in kinds.get("driver", []) if d.get("amp")]
+    if drivers and motors and min(d["amp"] for d in drivers) < 3 * max(m.get("amp", 0.0) for m in motors):  # a stalled motor draws about 3x its running current
+        out.append("motor sürücüsünün akım sınırı motorun kalkış akımının altında: daha güçlü sürücü (l298n) seç")
+    heavy = [lk["name"] for lk in plan["links"] if lk["source"] == "designed" and float(lk["mass_g"]) > MAX_PRINT_G]
+    if heavy:
+        out.append(f"{', '.join(heavy)} {MAX_PRINT_G:g} g'dan ağır: dolu basılmış gibi; kabuklu/boşluklu yap (daha ince duvar) ve kütleyi düşür")
     return out
 
 
