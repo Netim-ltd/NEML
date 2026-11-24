@@ -165,9 +165,12 @@ class CadBench:
 
     def report(self) -> dict[str, Any]:
         try:
-            return dict(json.loads(self._path.read_text(encoding="utf-8")))
+            run = dict(json.loads(self._path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return {}
+        if run.get("state") == "running" and not self.busy():  # the brain restarted mid-run: nothing is running any more
+            run["state"] = "interrupted"
+        return run
 
     def busy(self) -> bool:
         return self._task is not None and not self._task.done()

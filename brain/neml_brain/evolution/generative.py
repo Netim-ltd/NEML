@@ -33,7 +33,7 @@ from typing import Any
 import sqlalchemy as sa
 import structlog
 
-from neml_brain.evolution import structure
+from neml_brain.evolution import elites, structure
 from neml_brain.evolution.buildpack import build_pack
 from neml_brain.evolution.catalog import CATALOG, OTHER
 from neml_brain.evolution.catalog import apply as use_catalog
@@ -632,7 +632,7 @@ class Generator:
         scored: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
         for i in range(self.variants):
             try:
-                plan = await self._plan(brief, lambda t, i=i: progress(f"varyant {i + 1}: {t}"), VARIANT_HINTS[i % len(VARIANT_HINTS)])
+                plan = await self._plan(brief, lambda t, i=i: progress(f"varyant {i + 1}: {t}"), VARIANT_HINTS[i % len(VARIANT_HINTS)] + (elites.hint(self._learn.root, scored[0][1] if scored else None, i) if i else ""))
             except RuntimeError:  # a variant that never became a valid plan just loses
                 continue
             score, info = plan_score(plan)
@@ -844,6 +844,7 @@ class Generator:
                 + ("; ".join(problems) or "otomatik devreye alma kapalı")
             )
         if not problems:
+            elites.keep(self._learn.root, plan, plan_score(plan)[0])
             Questions(self._learn.root).keep(brief, plan)  # a plan that passed every gate is the next similar request's example
         else:
             Questions(self._learn.root).ask(f"'{plan['name']}' taslak kaldı: {'; '.join(problems[:2])[:200]}. Ne yapmalı?", "tasarım kapıları geçilemedi")
