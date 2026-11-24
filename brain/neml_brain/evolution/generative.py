@@ -636,7 +636,7 @@ class Generator:
             except RuntimeError:  # a variant that never became a valid plan just loses
                 continue
             score, info = plan_score(plan)
-            progress(f"varyant {i + 1} ({plan['name']}): {info['links']} link, yerleşim sorunu {info['layout_issues']}, devrilme payı {info['tip_margin']}")
+            progress(f"varyant {i + 1} ({plan['name']}): {info['links']} link, yerleşim sorunu {info['layout_issues']}, devrilme payı {info['tip_margin']}, görev {info.get('mission', {})}")
             scored.append((score, plan, info))
         if not scored:
             raise RuntimeError("hiçbir varyant geçerli plan çıkarmadı")
@@ -802,36 +802,35 @@ class Generator:
         out.mkdir(parents=True, exist_ok=True)
         built: dict[str, dict[str, Any]] = ckpt["built"]
         meshes: dict[str, str] = {}
+        failed = ""  # a part the CAD server cannot make is a plan problem too: plan again with the message
         for lk in plan["links"]:
             if lk["source"] == "designed":
                 key = slug(str(lk["name"]))
                 if key not in built or not (out / f"{key}.stl").exists():
-                    built[key] = await self._part(lk, out, progress, body_kg=plan_mass(plan))
+                    try:
+                        built[key] = await self._part(lk, out, progress, body_kg=plan_mass(plan))
+                    except RuntimeError as exc:
+                        failed = str(exc)[:240]
+                        break
                     built[key] = await self._mount(plan, lk, key, built[key], out, progress)
                     await self._draw(key, built[key], lk, out)
                     save()
                 meshes[key] = f"{key}.stl"
-        progress("montaj ve denetim")
-        urdf = urdf_of(plan, meshes)
-        try:
-            summary, found, rig, _ = assemble(urdf)
-        except UrdfError as exc:
-            raise RuntimeError(f"URDF okunamadı: {exc}") from exc
-        problems = [
-            *gate(plan, built),
-            *layout_issues(plan),
-            *robot_issues(plan),
-        ]  # a layout the critic still dislikes keeps the design a draft
-        if problems:  # no round limit (the model is ours, a round costs only time): plan again with the findings until clean, stop when stuck
-            best = min(ckpt.get("best", 10**6), len(problems))
-            stuck = 0 if best < ckpt.get("best", 10**6) else ckpt.get("stuck", 0) + 1
-            t0 = ckpt.setdefault("t0", time.time())
-            if stuck < REVISE_PATIENCE and time.time() - t0 < REVISE_HOURS * 3600:
-                progress(f"tur {ckpt.get('rounds', 0) + 1}: {len(problems)} sorun, plan bulguları görerek yeniden yazılıyor")
-                feedback = "\nÖnceki tasarımın sert yargıç bulguları: " + "; ".join(problems[:6]) + ". Bunları gideren yeni bir plan yaz."
-                ckpt.update(plan=await self._race(brief + feedback, progress), out=uuid.uuid4().hex[:8], built={}, best=best, stuck=stuck, rounds=ckpt.get("rounds", 0) + 1)
-                save()
-                return await self.design(brief, actor, progress, auto_activate, ckpt, save)
+        if failed:
+            problems = [f"parça üretilemedi, bu ölçü/biçimle yapılamıyor: {failed}"]
+            urdf = summary = found = rig = None
+        else:
+            progress("montaj ve denetim")
+            urdf = urdf_of(plan, meshes)
+            try:
+                summary, found, rig, _ = assemble(urdf)
+            except UrdfError as exc:
+                raise RuntimeError(f"URDF okunamadı: {exc}") from exc
+            problems = [
+                *gate(plan, built),
+                *layout_issues(plan),
+                *robot_issues(plan),
+            ]  # a layout the critic still dislikes keeps the design a draft
         entries = await self._entries(plan, built, meshes, urdf, (summary, found, rig))
         model, draft_id = await self._store(entries, plan, name, actor, brief, problems)
         activated = False
