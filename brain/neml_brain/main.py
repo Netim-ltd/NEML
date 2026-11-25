@@ -477,6 +477,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ):
             await roundtable.review(due[0])
 
+    async def revisit_job() -> None:
+        """Past designs are judged again with today's rules; the weakest one is designed again with its findings (cooldown and round limit per model)."""
+        if generator.busy():
+            return
+        from neml_brain.evolution import revisit
+
+        async with sessions() as session:
+            rows = (
+                await session.execute(
+                    sa.text("SELECT name, body->'mechanical'->'generated' AS g FROM genomes WHERE status = 'active' AND body->'mechanical'->'generated' IS NOT NULL")
+                )
+            ).all()
+        designs = {r[0]: (json.loads(r[1]) if isinstance(r[1], str) else r[1]) for r in rows if r[1]}
+        designs = {k: v for k, v in designs.items() if v.get("plan")}
+        if (found := revisit.pick(learn_store.root, designs)) is not None:
+            revisit.mark(learn_store.root, found[0])
+            generator.start(found[1], "lab")
+
     async def digest_job() -> None:
         """A daily record of what the lab learned, built and trained (shown on the learning page)."""
         path = learn_store.root / "daily.json"
@@ -542,6 +560,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         daily_review_job,
         IntervalTrigger(hours=6),
         id="daily_review",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        revisit_job,
+        IntervalTrigger(hours=3),
+        id="revisit",
         replace_existing=True,
         max_instances=1,
     )
